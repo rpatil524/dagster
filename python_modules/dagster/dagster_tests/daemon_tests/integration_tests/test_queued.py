@@ -52,9 +52,9 @@ def test_queue_from_schedule_and_sensor(tmpdir, foo_example_repo):
 
                 runs = [
                     poll_for_finished_run(instance, run.run_id),
-                    poll_for_finished_run(
-                        instance, run_tags=PipelineRun.tags_for_sensor(external_sensor)
-                    ),
+                    # poll_for_finished_run(
+                    #     instance, run_tags=PipelineRun.tags_for_sensor(external_sensor)
+                    # ),
                     poll_for_finished_run(
                         instance,
                         run_tags=PipelineRun.tags_for_schedule(external_schedule),
