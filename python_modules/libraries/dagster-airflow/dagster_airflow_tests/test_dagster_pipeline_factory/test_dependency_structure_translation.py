@@ -1,3 +1,4 @@
+import pytest
 from airflow import __version__ as airflow_version
 from airflow.models.dag import DAG
 from airflow.operators.dummy_operator import DummyOperator  # type: ignore
@@ -13,15 +14,13 @@ from dagster._core.snap import JobSnap
 from dagster._serdes import serialize_pp
 from dagster_airflow.dagster_job_factory import make_dagster_job_from_airflow_dag
 
-from dagster_airflow_tests.marks import requires_no_db
-
 default_args = {
     "owner": "dagster",
     "start_date": days_ago(1),
 }
 
 
-@requires_no_db
+@pytest.mark.requires_no_db
 def test_one_task_dag(snapshot):
     if airflow_version >= "2.0.0":
         dag = DAG(
@@ -47,7 +46,7 @@ def test_one_task_dag(snapshot):
     )
 
 
-@requires_no_db
+@pytest.mark.requires_no_db
 def test_two_task_dag_no_dep(snapshot):
     if airflow_version >= "2.0.0":
         dag = DAG(
@@ -77,7 +76,7 @@ def test_two_task_dag_no_dep(snapshot):
     )
 
 
-@requires_no_db
+@pytest.mark.requires_no_db
 def test_two_task_dag_with_dep(snapshot):
     if airflow_version >= "2.0.0":
         dag = DAG(
@@ -100,7 +99,7 @@ def test_two_task_dag_with_dep(snapshot):
         task_id="dummy_operator_2",
         dag=dag,
     )
-    dummy_operator_1 >> dummy_operator_2
+    dummy_operator_1 >> dummy_operator_2  # pyright: ignore[reportUnusedExpression]
 
     snapshot.assert_match(
         serialize_pp(
@@ -109,7 +108,7 @@ def test_two_task_dag_with_dep(snapshot):
     )
 
 
-@requires_no_db
+@pytest.mark.requires_no_db
 def test_diamond_task_dag(snapshot):
     if airflow_version >= "2.0.0":
         dag = DAG(
@@ -139,10 +138,10 @@ def test_diamond_task_dag(snapshot):
         task_id="dummy_operator_4",
         dag=dag,
     )
-    dummy_operator_1 >> dummy_operator_2
-    dummy_operator_1 >> dummy_operator_3
-    dummy_operator_2 >> dummy_operator_4
-    dummy_operator_3 >> dummy_operator_4
+    dummy_operator_1 >> dummy_operator_2  # pyright: ignore[reportUnusedExpression]
+    dummy_operator_1 >> dummy_operator_3  # pyright: ignore[reportUnusedExpression]
+    dummy_operator_2 >> dummy_operator_4  # pyright: ignore[reportUnusedExpression]
+    dummy_operator_3 >> dummy_operator_4  # pyright: ignore[reportUnusedExpression]
 
     snapshot.assert_match(
         serialize_pp(
@@ -151,7 +150,7 @@ def test_diamond_task_dag(snapshot):
     )
 
 
-@requires_no_db
+@pytest.mark.requires_no_db
 def test_multi_root_dag(snapshot):
     if airflow_version >= "2.0.0":
         dag = DAG(
@@ -181,9 +180,9 @@ def test_multi_root_dag(snapshot):
         task_id="dummy_operator_4",
         dag=dag,
     )
-    dummy_operator_1 >> dummy_operator_4
-    dummy_operator_2 >> dummy_operator_4
-    dummy_operator_3 >> dummy_operator_4
+    dummy_operator_1 >> dummy_operator_4  # pyright: ignore[reportUnusedExpression]
+    dummy_operator_2 >> dummy_operator_4  # pyright: ignore[reportUnusedExpression]
+    dummy_operator_3 >> dummy_operator_4  # pyright: ignore[reportUnusedExpression]
     dag.tree_view()
 
     snapshot.assert_match(
@@ -193,7 +192,7 @@ def test_multi_root_dag(snapshot):
     )
 
 
-@requires_no_db
+@pytest.mark.requires_no_db
 def test_multi_leaf_dag(snapshot):
     if airflow_version >= "2.0.0":
         dag = DAG(
@@ -223,9 +222,9 @@ def test_multi_leaf_dag(snapshot):
         task_id="dummy_operator_4",
         dag=dag,
     )
-    dummy_operator_1 >> dummy_operator_2
-    dummy_operator_1 >> dummy_operator_3
-    dummy_operator_1 >> dummy_operator_4
+    dummy_operator_1 >> dummy_operator_2  # pyright: ignore[reportUnusedExpression]
+    dummy_operator_1 >> dummy_operator_3  # pyright: ignore[reportUnusedExpression]
+    dummy_operator_1 >> dummy_operator_4  # pyright: ignore[reportUnusedExpression]
 
     snapshot.assert_match(
         serialize_pp(
@@ -234,7 +233,7 @@ def test_multi_leaf_dag(snapshot):
     )
 
 
-@requires_no_db
+@pytest.mark.requires_no_db
 def test_complex_dag(snapshot):
     if airflow_version >= "2.0.0":
         dag = DAG(
@@ -312,17 +311,17 @@ def test_complex_dag(snapshot):
         task_id="delete_entry",
         dag=dag,
     )
-    create_entry_gcs >> delete_entry
+    create_entry_gcs >> delete_entry  # pyright: ignore[reportUnusedExpression]
     delete_entry_group = DummyOperator(
         task_id="delete_entry_group",
         dag=dag,
     )
-    create_entry_group >> delete_entry_group
+    create_entry_group >> delete_entry_group  # pyright: ignore[reportUnusedExpression]
     delete_tag = DummyOperator(
         task_id="delete_tag",
         dag=dag,
     )
-    create_tag >> delete_tag
+    create_tag >> delete_tag  # pyright: ignore[reportUnusedExpression]
     delete_tag_template_field = DummyOperator(
         task_id="delete_tag_template_field",
         dag=dag,
@@ -422,24 +421,24 @@ def test_complex_dag(snapshot):
     ]
     chain(*create_tasks)
 
-    create_entry_group >> delete_entry_group
-    create_entry_group >> create_entry_group_result
-    create_entry_group >> create_entry_group_result2
+    create_entry_group >> delete_entry_group  # pyright: ignore[reportUnusedExpression]
+    create_entry_group >> create_entry_group_result  # pyright: ignore[reportUnusedExpression]
+    create_entry_group >> create_entry_group_result2  # pyright: ignore[reportUnusedExpression]
 
-    create_entry_gcs >> delete_entry
-    create_entry_gcs >> create_entry_gcs_result
-    create_entry_gcs >> create_entry_gcs_result2
+    create_entry_gcs >> delete_entry  # pyright: ignore[reportUnusedExpression]
+    create_entry_gcs >> create_entry_gcs_result  # pyright: ignore[reportUnusedExpression]
+    create_entry_gcs >> create_entry_gcs_result2  # pyright: ignore[reportUnusedExpression]
 
-    create_tag_template >> delete_tag_template_field
-    create_tag_template >> create_tag_template_result
-    create_tag_template >> create_tag_template_result2
+    create_tag_template >> delete_tag_template_field  # pyright: ignore[reportUnusedExpression]
+    create_tag_template >> create_tag_template_result  # pyright: ignore[reportUnusedExpression]
+    create_tag_template >> create_tag_template_result2  # pyright: ignore[reportUnusedExpression]
 
-    create_tag_template_field >> delete_tag_template_field
-    create_tag_template_field >> create_tag_template_field_result
+    create_tag_template_field >> delete_tag_template_field  # pyright: ignore[reportUnusedExpression]
+    create_tag_template_field >> create_tag_template_field_result  # pyright: ignore[reportUnusedExpression]
 
-    create_tag >> delete_tag
-    create_tag >> create_tag_result
-    create_tag >> create_tag_result2
+    create_tag >> delete_tag  # pyright: ignore[reportUnusedExpression]
+    create_tag >> create_tag_result  # pyright: ignore[reportUnusedExpression]
+    create_tag >> create_tag_result2  # pyright: ignore[reportUnusedExpression]
 
     # Delete
     delete_tasks = [
@@ -452,35 +451,35 @@ def test_complex_dag(snapshot):
     chain(*delete_tasks)
 
     # Get
-    create_tag_template >> get_tag_template >> delete_tag_template
-    get_tag_template >> get_tag_template_result
+    create_tag_template >> get_tag_template >> delete_tag_template  # pyright: ignore[reportUnusedExpression]
+    get_tag_template >> get_tag_template_result  # pyright: ignore[reportUnusedExpression]
 
-    create_entry_gcs >> get_entry >> delete_entry
-    get_entry >> get_entry_result
+    create_entry_gcs >> get_entry >> delete_entry  # pyright: ignore[reportUnusedExpression]
+    get_entry >> get_entry_result  # pyright: ignore[reportUnusedExpression]
 
-    create_entry_group >> get_entry_group >> delete_entry_group
-    get_entry_group >> get_entry_group_result
+    create_entry_group >> get_entry_group >> delete_entry_group  # pyright: ignore[reportUnusedExpression]
+    get_entry_group >> get_entry_group_result  # pyright: ignore[reportUnusedExpression]
 
     # List
-    create_tag >> list_tags >> delete_tag
-    list_tags >> list_tags_result
+    create_tag >> list_tags >> delete_tag  # pyright: ignore[reportUnusedExpression]
+    list_tags >> list_tags_result  # pyright: ignore[reportUnusedExpression]
 
     # Lookup
-    create_entry_gcs >> lookup_entry >> delete_entry
-    lookup_entry >> lookup_entry_result
+    create_entry_gcs >> lookup_entry >> delete_entry  # pyright: ignore[reportUnusedExpression]
+    lookup_entry >> lookup_entry_result  # pyright: ignore[reportUnusedExpression]
 
     # Rename
-    create_tag_template_field >> rename_tag_template_field >> delete_tag_template_field
+    create_tag_template_field >> rename_tag_template_field >> delete_tag_template_field  # pyright: ignore[reportUnusedExpression]
 
     # Search
     chain(create_tasks, search_catalog, delete_tasks)
-    search_catalog >> search_catalog_result
+    search_catalog >> search_catalog_result  # pyright: ignore[reportUnusedExpression]
 
     # Update
-    create_entry_gcs >> update_entry >> delete_entry
-    create_tag >> update_tag >> delete_tag
-    create_tag_template >> update_tag_template >> delete_tag_template
-    create_tag_template_field >> update_tag_template_field >> rename_tag_template_field
+    create_entry_gcs >> update_entry >> delete_entry  # pyright: ignore[reportUnusedExpression]
+    create_tag >> update_tag >> delete_tag  # pyright: ignore[reportUnusedExpression]
+    create_tag_template >> update_tag_template >> delete_tag_template  # pyright: ignore[reportUnusedExpression]
+    create_tag_template_field >> update_tag_template_field >> rename_tag_template_field  # pyright: ignore[reportUnusedExpression]
 
     snapshot.assert_match(
         serialize_pp(
@@ -489,7 +488,7 @@ def test_complex_dag(snapshot):
     )
 
 
-@requires_no_db
+@pytest.mark.requires_no_db
 def test_one_task_dag_to_job():
     if airflow_version >= "2.0.0":
         dag = DAG(

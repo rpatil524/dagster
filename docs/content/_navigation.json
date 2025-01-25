@@ -170,7 +170,7 @@
             "path": "/concepts/partitions-schedules-sensors/sensors"
           },
           {
-            "title": "Declarative Automation (Experimental)",
+            "title": "Declarative Automation",
             "children": [
               {
                 "title": "Overview",
@@ -179,6 +179,10 @@
               {
                 "title": "Customizing automation conditions",
                 "path": "/concepts/automation/declarative-automation/customizing-automation-conditions"
+              },
+              {
+                "title": "Automation conditions explained (Advanced)",
+                "path": "/concepts/automation/declarative-automation/automation-conditions-explained"
               }
             ]
           },
@@ -378,6 +382,10 @@
                   }
                 ]
               },
+	      {
+                "title": "Dagster Pipes + PySpark",
+                "path": "/concepts/dagster-pipes/pyspark"
+              },
               {
                 "title": "Dagster Pipes + AWS ECS",
                 "path": "/concepts/dagster-pipes/aws-ecs"
@@ -389,6 +397,10 @@
               {
                 "title": "Dagster Pipes + AWS EMR",
                 "path": "/concepts/dagster-pipes/aws-emr"
+              },
+              {
+                "title": "Dagster Pipes + AWS EMR on EKS",
+                "path": "/concepts/dagster-pipes/aws-emr-containers"
               },
               {
                 "title": "Dagster Pipes + AWS EMR Serverless",
@@ -409,6 +421,10 @@
               {
                 "title": "Details and customization",
                 "path": "/concepts/dagster-pipes/dagster-pipes-details-and-customization"
+              },
+              {
+                "title": "Migrating from Step Launchers to Dagster Pipes",
+                "path": "/guides/migrations/from-step-launchers-to-pipes"
               }
             ]
           },
@@ -544,6 +560,24 @@
               {
                 "title": "Setting environment variables",
                 "path": "/dagster-plus/managing-deployments/setting-environment-variables-agents"
+              },
+              {
+                "title": "Deploying on Azure: Full guide",
+                "path": "/dagster-plus/deployment/azure/overview",
+                "children": [
+                  {
+                    "title": "Part 1: Setting up an AKS agent.",
+                    "path": "/dagster-plus/deployment/azure/aks-agent"
+                  },
+                  {
+                    "title": "Part 2: Deploy user code using ACR.",
+                    "path": "/dagster-plus/deployment/azure/acr-user-code"
+                  },
+                  {
+                    "title": "Part 3: Storing compute logs in Azure Blob Storage / Azure Data Lake",
+                    "path": "/dagster-plus/deployment/azure/blob-compute-logs"
+                  }
+                ]
               }
             ]
           }
@@ -896,21 +930,109 @@
     "children": [
       {
         "title": "Airbyte",
-        "path": "/integrations/airbyte",
+        "path": "/integrations/airbyte/airbyte",
         "children": [
           {
             "title": "Airbyte & Dagster",
-            "path": "/integrations/airbyte"
+            "path": "/integrations/airbyte/airbyte"
           },
           {
             "title": "Airbyte Cloud & Dagster",
-            "path": "/integrations/airbyte-cloud"
+            "path": "/integrations/airbyte/airbyte-cloud"
+          },
+          {
+            "title": "Airbyte Cloud & Dagster (Legacy)",
+            "path": "/integrations/airbyte/airbyte-cloud-legacy"
           }
         ]
       },
       {
-        "title": "Airflow",
-        "path": "/integrations/airflow"
+        "title": "Airlift",
+        "path": "/integrations/airlift",
+        "children": [
+          {
+            "title": "Mapping Airflow Concepts to Dagster",
+            "path": "/integrations/airlift/airflow-dagster-equivalents"
+          },
+          {
+            "title": "Airflow Migration Tutorial",
+            "path": "/integrations/airlift/tutorial/overview",
+            "children": [
+              {
+                "title": "Part 1: Setup local Airflow",
+                "path": "/integrations/airlift/tutorial/setup"
+              },
+              {
+                "title": "Part 2: Peering to the Airflow Instance",
+                "path": "/integrations/airlift/tutorial/peer"
+              },
+              {
+                "title": "Part 3: Observing assets",
+                "path": "/integrations/airlift/tutorial/observe"
+              },
+              {
+                "title": "Part 4: Migrating assets",
+                "path": "/integrations/airlift/tutorial/migrate"
+              },
+              {
+                "title": "Part 5: Decomissioning the Airflow DAG",
+                "path": "/integrations/airlift/tutorial/decomission"
+              }
+            ]
+          },
+          {
+            "title": "Airflow Federation Tutorial",
+            "path": "/integrations/airlift/federation-tutorial/overview",
+            "children": [
+              {
+                "title": "Part 1: Setup upstream and downstream Airflow instances",
+                "path": "/integrations/airlift/federation-tutorial/setup"
+              },
+              {
+                "title": "Part 2: Observe dag lineage in Dagster",
+                "path": "/integrations/airlift/federation-tutorial/observe"
+              },
+              {
+                "title": "Part 3: Federate across Airflow instances",
+                "path": "/integrations/airlift/federation-tutorial/federated-execution"
+              }
+            ]
+          },
+          {
+            "title": "Reference",
+            "path": "/integrations/airlift/reference"
+          },
+          {
+            "title": "DAG-level migration",
+            "path": "/integrations/airlift/full_dag"
+          },
+          {
+            "title": "Migration with Airflow 1",
+            "path": "/integrations/airlift/airflow-1-migration"
+          },
+          {
+            "title": "Operator Migration Reference",
+            "path": "/integrations/airlift/operator-migration/overview",
+            "children": [
+              {
+                "title": "Migrating a BashOperator for dbt",
+                "path": "/integrations/airlift/operator-migration/bash-operator-dbt"
+              },
+              {
+                "title": "Migrating a KubernetesPodOperator",
+                "path": "/integrations/airlift/operator-migration/kubernetes-pod-operator"
+              },
+              {
+                "title": "Migrating a PythonOperator",
+                "path": "/integrations/airlift/operator-migration/python-operator"
+              },
+              {
+                "title": "Migrating a BashOperator (general)",
+                "path": "/integrations/airlift/operator-migration/bash-operator-general"
+              }
+            ]
+          }
+        ]
       },
       {
         "title": "Databricks",
@@ -1004,17 +1126,27 @@
         "children": [
           {
             "title": "dlt & Dagster",
-            "path": "/integrations/embedded-elt/dlt"
+            "path": "/integrations/dlt"
           },
           {
             "title": "Sling & Dagster",
-            "path": "/integrations/embedded-elt/sling"
+            "path": "/integrations/sling"
           }
         ]
       },
       {
         "title": "Fivetran",
-        "path": "/integrations/fivetran"
+        "path": "/integrations/fivetran",
+        "children": [
+          {
+            "title": "Fivetran",
+            "path": "/integrations/fivetran/fivetran"
+          },
+          {
+            "title": "Fivetran (Legacy)",
+            "path": "/integrations/fivetran/fivetran-legacy"
+          }
+        ]
       },
       {
         "title": "Google BigQuery",
@@ -1045,6 +1177,10 @@
         ]
       },
       {
+        "title": "Looker",
+        "path": "/integrations/looker"
+      },
+      {
         "title": "OpenAI",
         "path": "/integrations/openai"
       },
@@ -1057,7 +1193,15 @@
         "path": "/integrations/pandera"
       },
       {
-        "title": "PySpark",
+        "title": "Power BI",
+        "path": "/integrations/powerbi"
+      },
+      {
+        "title": "Sigma",
+        "path": "/integrations/sigma"
+      },
+      {
+        "title": "Spark",
         "path": "/integrations/spark"
       },
       {
@@ -1082,6 +1226,10 @@
             "path": "/integrations/snowflake/reference"
           }
         ]
+      },
+      {
+        "title": "Tableau",
+        "path": "/integrations/tableau"
       },
       {
         "title": "All integrations",
@@ -1195,24 +1343,6 @@
         "isNotDynamic": true
       },
       {
-        "title": "Migrating to Dagster",
-        "path": "/guides/migrations",
-        "children": [
-          {
-            "title": "Learning Dagster from Airflow",
-            "path": "/integrations/airflow/from-airflow-to-dagster"
-          },
-          {
-            "title": "Migrating from Airflow",
-            "path": "/guides/migrations/migrating-airflow-to-dagster"
-          },
-          {
-            "title": "Observe your Airflow pipelines with Dagster",
-            "path": "/guides/migrations/observe-your-airflow-pipelines-with-dagster"
-          }
-        ]
-      },
-      {
         "title": "Best practices",
         "children": [
           {
@@ -1250,6 +1380,10 @@
               {
                 "title": "Validating data with Dagster Type factories",
                 "path": "/guides/dagster/dagster_type_factories"
+              },
+              {
+                "title": "Migrating from Spark Step Launchers to Dagster Pipes",
+                "path": "/guides/migrations/from-step-launchers-to-pipes"
               }
             ]
           },
@@ -1393,6 +1527,10 @@
             "path": "/_apidocs/libraries/dagster-pipes"
           },
           {
+            "title": "Airflow (dagster-airlift)",
+            "path": "/_apidocs/libraries/dagster-airlift"
+          },
+          {
             "title": "Airbyte (dagster-airbyte)",
             "path": "/_apidocs/libraries/dagster-airbyte"
           },
@@ -1441,6 +1579,10 @@
             "path": "/_apidocs/libraries/dagster-deltalake"
           },
           {
+            "title": "dlt (dagster-dlt)",
+            "path": "/_apidocs/libraries/dagster-dlt"
+          },
+          {
             "title": "Docker (dagster-docker)",
             "path": "/_apidocs/libraries/dagster-docker"
           },
@@ -1459,10 +1601,6 @@
           {
             "title": "DuckDB & Polars (dagster-duckdb-polars)",
             "path": "/_apidocs/libraries/dagster-duckdb-polars"
-          },
-          {
-            "title": "Embedded ELT (dagster-embedded-elt)",
-            "path": "/_apidocs/libraries/dagster-embedded-elt"
           },
           {
             "title": "Fivetran (dagster-fivetran)",
@@ -1557,8 +1695,16 @@
             "path": "/_apidocs/libraries/dagster-shell"
           },
           {
+            "title": "Sigma (dagster-sigma)",
+            "path": "/_apidocs/libraries/dagster-sigma"
+          },
+          {
             "title": "Slack (dagster-slack)",
             "path": "/_apidocs/libraries/dagster-slack"
+          },
+          {
+            "title": "Sling (dagster-sling)",
+            "path": "/_apidocs/libraries/dagster-sling"
           },
           {
             "title": "Snowflake (dagster-snowflake)",

@@ -1,5 +1,6 @@
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Mapping, NamedTuple, Optional, Sequence, Union, cast
+from typing import Any, NamedTuple, Optional, Union, cast
 
 from dagster import _check as check
 
@@ -39,9 +40,23 @@ class SourcePositionTree(NamedTuple):
             return None
         return self.children[head].lookup(tail)
 
+    def lookup_closest_and_path(
+        self, key_path: KeyPath, trace: Optional[Sequence[SourcePosition]]
+    ) -> tuple[SourcePosition, Sequence[SourcePosition]]:
+        """Returns the source position of the descendant at the given path. If the path does not
+        exist, returns the source position of the nearest ancestor.
+        """
+        trace = [*trace, self.position] if trace else [self.position]
+        if len(key_path) == 0:
+            return self.position, trace
+        head, *tail = key_path
+        if head not in self.children:
+            return self.position, trace
+        return self.children[head].lookup_closest_and_path(tail, trace)
+
 
 class ValueAndSourcePositionTree(NamedTuple):
-    """An tree-like object (like a JSON-structured dict) and an accompanying SourcePositionTree.
+    """A tree-like object (like a JSON-structured dict) and an accompanying SourcePositionTree.
 
     Each tree node in the SourcePositionTree is expected to correspond to in value.
     """

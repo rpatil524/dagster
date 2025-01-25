@@ -1,5 +1,6 @@
-from abc import ABC, ABCMeta, abstractmethod
-from typing import AbstractSet, Any, Dict, Iterator, List, Mapping, Optional, Sequence, cast
+from abc import ABC, abstractmethod
+from collections.abc import Iterator, Mapping, Sequence
+from typing import AbstractSet, Any, Optional, cast  # noqa: UP035
 
 import dagster._check as check
 from dagster._annotations import deprecated, experimental, public
@@ -34,15 +35,9 @@ from dagster._core.instance import DagsterInstance
 from dagster._core.log_manager import DagsterLogManager
 from dagster._core.storage.dagster_run import DagsterRun
 from dagster._utils.forked_pdb import ForkedPdb
-from dagster._utils.warnings import deprecation_warning
 
 
-# This metaclass has to exist for OpExecutionContext to have a metaclass
-class AbstractComputeMetaclass(ABCMeta):
-    pass
-
-
-class AbstractComputeExecutionContext(ABC, metaclass=AbstractComputeMetaclass):
+class AbstractComputeExecutionContext(ABC):
     """Base class for op context implemented by OpExecutionContext and DagstermillExecutionContext."""
 
     @abstractmethod
@@ -94,27 +89,7 @@ class AbstractComputeExecutionContext(ABC, metaclass=AbstractComputeMetaclass):
         """The parsed config specific to this op."""
 
 
-class OpExecutionContextMetaClass(AbstractComputeMetaclass):
-    def __instancecheck__(cls, instance) -> bool:
-        from dagster._core.execution.context.asset_execution_context import AssetExecutionContext
-
-        # This makes isinstance(context, OpExecutionContext) throw a deprecation warning when
-        # context is an AssetExecutionContext. This metaclass can be deleted once AssetExecutionContext
-        # has been split into it's own class in 1.9.0
-        if type(instance) is AssetExecutionContext and cls is not AssetExecutionContext:
-            deprecation_warning(
-                subject="AssetExecutionContext",
-                additional_warn_text=(
-                    "Starting in version 1.9.0 AssetExecutionContext will no longer be a subclass"
-                    " of OpExecutionContext."
-                ),
-                breaking_version="1.9.0",
-                stacklevel=1,
-            )
-        return super().__instancecheck__(instance)
-
-
-class OpExecutionContext(AbstractComputeExecutionContext, metaclass=OpExecutionContextMetaClass):
+class OpExecutionContext(AbstractComputeExecutionContext):
     """The ``context`` object that can be made available as the first argument to the function
     used for computing an op or asset.
 
@@ -141,8 +116,8 @@ class OpExecutionContext(AbstractComputeExecutionContext, metaclass=OpExecutionC
             StepExecutionContext,
         )
         self._pdb: Optional[ForkedPdb] = None
-        self._events: List[DagsterEvent] = []
-        self._output_metadata: Dict[str, Any] = {}
+        self._events: list[DagsterEvent] = []
+        self._output_metadata: dict[str, Any] = {}
 
     @property
     def op_execution_context(self) -> "OpExecutionContext":
@@ -318,7 +293,7 @@ class OpExecutionContext(AbstractComputeExecutionContext, metaclass=OpExecutionC
                 #   ["2023-08-21", "2023-08-22", "2023-08-23", "2023-08-24", "2023-08-25"]
         """
         key_range = self.partition_key_range
-        partitions_def = self.assets_def.partitions_def
+        partitions_def = self._step_execution_context.run_partitions_def
         if partitions_def is None:
             raise DagsterInvariantViolationError(
                 "Cannot access partition_keys for a non-partitioned run"

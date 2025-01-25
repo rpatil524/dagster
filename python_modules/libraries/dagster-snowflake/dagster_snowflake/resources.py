@@ -1,9 +1,10 @@
 import base64
 import sys
 import warnings
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import closing, contextmanager
 from datetime import datetime
-from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Union
+from typing import Any, Optional, Union
 
 import dagster._check as check
 from cryptography.hazmat.backends import default_backend
@@ -17,9 +18,8 @@ from dagster import (
 from dagster._annotations import public
 from dagster._core.definitions.resource_definition import dagster_maintained_resource
 from dagster._core.storage.event_log.sql_event_log import SqlDbConnection
-from dagster._model.pydantic_compat_layer import compat_model_validator
 from dagster._utils.cached_method import cached_method
-from pydantic import Field, validator
+from pydantic import Field, model_validator, validator
 
 from dagster_snowflake.constants import (
     SNOWFLAKE_PARTNER_CONNECTION_IDENTIFIER,
@@ -132,8 +132,8 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
             "Raw private key to use. See the `Snowflake documentation"
             " <https://docs.snowflake.com/en/user-guide/key-pair-auth.html>`__ for details."
             " Alternately, set private_key_path and private_key_password. To avoid issues with"
-            " newlines in the keys, you can base64 encode the key. You can retrieve the base64"
-            " encoded key with this shell command: ``cat rsa_key.p8 | base64``"
+            " newlines in the keys, you can optionally base64 encode the key. You can retrieve"
+            " the base64 encoded key with this shell command: ``cat rsa_key.p8 | base64``"
         ),
     )
 
@@ -235,7 +235,7 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
             "Indicate alternative database connection engine. Permissible option is "
             "'sqlalchemy' otherwise defaults to use the Snowflake Connector for Python."
         ),
-        is_required=False,
+        is_required=False,  # type: ignore
     )
 
     cache_column_metadata: Optional[str] = Field(
@@ -259,6 +259,15 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
         default=None,
         description="Optional parameter to specify the authentication mechanism to use.",
     )
+    additional_snowflake_connection_args: Optional[dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "Additional keyword arguments to pass to the snowflake.connector.connect function. For a full list of"
+            " available arguments, see the `Snowflake documentation"
+            " <https://docs.snowflake.com/en/developer-guide/python-connector/python-connector-connect>`__."
+            " This config will be ignored if using the sqlalchemy connector."
+        ),
+    )
 
     @validator("paramstyle")
     def validate_paramstyle(cls, v: Optional[str]) -> Optional[str]:
@@ -278,7 +287,7 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
             )
         return v
 
-    @compat_model_validator(mode="before")
+    @model_validator(mode="before")
     def validate_authentication(cls, values):
         auths_set = 0
         auths_set += 1 if values.get("password") is not None else 0
@@ -339,12 +348,15 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
             conn_args["private_key"] = self._snowflake_private_key(self._resolved_config_dict)
 
         conn_args["application"] = SNOWFLAKE_PARTNER_CONNECTION_IDENTIFIER
+
+        if self._resolved_config_dict.get("additional_snowflake_connection_args") is not None:
+            conn_args.update(self._resolved_config_dict["additional_snowflake_connection_args"])
         return conn_args
 
     @property
     @cached_method
     def _sqlalchemy_connection_args(self) -> Mapping[str, Any]:
-        conn_args: Dict[str, Any] = {
+        conn_args: dict[str, Any] = {
             k: self._resolved_config_dict.get(k)
             for k in (
                 "account",
@@ -386,7 +398,7 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
             with open(config.get("private_key_path"), "rb") as key:
                 private_key = key.read()
         else:
-            private_key = config.get("private_key", None)
+            private_key = config.get("private_key", None).encode()
 
         kwargs = {}
         if config.get("private_key_password", None) is not None:
@@ -398,7 +410,9 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
             p_key = serialization.load_pem_private_key(
                 private_key, backend=default_backend(), **kwargs
             )
-        except TypeError:
+
+        # key fails to load, possibly indicating key is base64 encoded
+        except ValueError:
             try:
                 private_key = base64.b64decode(private_key)
                 p_key = serialization.load_pem_private_key(
@@ -567,9 +581,6 @@ class SnowflakeConnection:
 
         with self.get_connection() as conn:
             with closing(conn.cursor()) as cursor:
-                if sys.version_info[0] < 3:
-                    sql = sql.encode("utf-8")
-
                 self.log.info("Executing query: " + sql)
                 parameters = dict(parameters) if isinstance(parameters, Mapping) else parameters
                 cursor.execute(sql, parameters)
@@ -620,7 +631,7 @@ class SnowflakeConnection:
         if not fetch_results and use_pandas_result:
             check.failed("If use_pandas_result is True, fetch_results must also be True.")
 
-        results: List[Any] = []
+        results: list[Any] = []
         with self.get_connection() as conn:
             with closing(conn.cursor()) as cursor:
                 for raw_sql in sql_queries:
@@ -729,6 +740,7 @@ def fetch_last_updated_timestamps(
     schema: str,
     tables: Sequence[str],
     database: Optional[str] = None,
+    ignore_missing_tables: Optional[bool] = False,
 ) -> Mapping[str, datetime]:
     """Fetch the last updated times of a list of tables in Snowflake.
 
@@ -742,6 +754,8 @@ def fetch_last_updated_timestamps(
         tables (Sequence[str]): A list of table names to fetch the last updated time for.
         database (Optional[str]): The database of the table. Only required if the connection
             has not been set with a database.
+        ignore_missing_tables (Optional[bool]): If True, tables not found in Snowflake
+            will be excluded from the result.
 
     Returns:
         Mapping[str, datetime]: A dictionary of table names to their last updated time in UTC.
@@ -755,7 +769,7 @@ def fetch_last_updated_timestamps(
     )
 
     query = f"""
-    SELECT table_name, CONVERT_TIMEZONE('UTC', last_altered) AS last_altered 
+    SELECT table_name, CONVERT_TIMEZONE('UTC', last_altered) AS last_altered
     FROM {fully_qualified_table_name}
     WHERE table_schema = '{schema}' AND table_name IN ({tables_str});
     """
@@ -767,6 +781,8 @@ def fetch_last_updated_timestamps(
     result_correct_case = {}
     for table_name in tables:
         if table_name.upper() not in result_mapping:
+            if ignore_missing_tables:
+                continue
             raise ValueError(f"Table {table_name} could not be found.")
         last_altered = result_mapping[table_name.upper()]
         check.invariant(

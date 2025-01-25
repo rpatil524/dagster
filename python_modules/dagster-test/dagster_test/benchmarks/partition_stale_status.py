@@ -1,7 +1,8 @@
 # ruff: noqa: T201
 import argparse
+from collections.abc import Sequence
 from random import randint
-from typing import Sequence, Union
+from typing import Union
 
 from dagster import StaticPartitionsDefinition, asset
 from dagster._core.asset_graph_view.asset_graph_view import AssetGraphView, TemporalContext
@@ -63,7 +64,7 @@ parser.add_argument(
 
 parser.add_argument(
     "--override-partition-limit",
-    action=argparse.BooleanOptionalAction,  # type: ignore  # (3.9+ only)
+    action=argparse.BooleanOptionalAction,
     default=True,
     help=(
         "Override the `SKIP_PARTITION_DATA_VERSION_DEPENDENCY_THRESHOLD` with the value of"

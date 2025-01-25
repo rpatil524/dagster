@@ -1,11 +1,10 @@
 from pathlib import Path
-from typing import Dict
 
 from setuptools import find_packages, setup
 
 
 def get_version() -> str:
-    version: Dict[str, str] = {}
+    version: dict[str, str] = {}
     with open(Path(__file__).parent / "dagster_gcp_pyspark/version.py", encoding="utf8") as fp:
         exec(fp.read(), version)
 
@@ -27,7 +26,6 @@ setup(
         "dagster-gcp-pyspark"
     ),
     classifiers=[
-        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "License :: OSI Approved :: Apache Software License",
@@ -35,7 +33,7 @@ setup(
     ],
     packages=find_packages(exclude=["dagster_gcp_pyspark_tests*"]),
     include_package_data=True,
-    python_requires=">=3.8,<3.13",
+    python_requires=">=3.9,<3.13",
     install_requires=[
         f"dagster{pin}",
         f"dagster-gcp{pin}",

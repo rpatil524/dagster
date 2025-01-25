@@ -16,7 +16,7 @@ import {RunAssetTags} from './RunAssetTags';
 import {RUN_PAGE_FRAGMENT} from './RunFragments';
 import {RunHeaderActions} from './RunHeaderActions';
 import {RunStatusTag} from './RunStatusTag';
-import {DagsterTag} from './RunTag';
+import {DagsterTag, RunTag} from './RunTag';
 import {RunTimingTags} from './RunTimingTags';
 import {getBackfillPath} from './RunsFeedUtils';
 import {TickTagForRun} from './TickTagForRun';
@@ -92,6 +92,8 @@ export const RunRoot = () => {
     return null;
   }, [run, repoAddress]);
 
+  const partitionTag = run?.tags.find((tag) => tag.key === DagsterTag.Partition);
+
   return (
     <div
       style={{
@@ -135,6 +137,7 @@ export const RunRoot = () => {
                     tickId={tickDetails.tickId}
                   />
                 ) : null}
+                {partitionTag && <RunTag tag={partitionTag} />}
                 <RunAssetTags run={run} />
                 <RunAssetCheckTags run={run} />
                 <RunTimingTags run={run} loading={loading} />
@@ -195,14 +198,14 @@ const RUN_ROOT_QUERY = gql`
 `;
 
 const RunHeaderTitle = ({run, runId}: {run: RunPageFragment | null; runId: string}) => {
-  const {flagRunsFeed} = useFeatureFlags();
+  const {flagLegacyRunsPage} = useFeatureFlags();
 
   const backfillTag = useMemo(
     () => run?.tags.find((tag) => tag.key === DagsterTag.Backfill),
     [run],
   );
 
-  if (flagRunsFeed && backfillTag) {
+  if (!flagLegacyRunsPage && backfillTag) {
     return (
       <Heading>
         <Link to="/runs" style={{color: Colors.textLight()}}>

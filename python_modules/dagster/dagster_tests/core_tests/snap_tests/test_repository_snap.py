@@ -1,5 +1,3 @@
-from typing import Dict, List, cast
-
 from dagster import (
     AssetCheckSpec,
     AssetOut,
@@ -18,10 +16,6 @@ from dagster import (
 from dagster._config.field_utils import EnvVar
 from dagster._config.pythonic_config import Config, ConfigurableResource
 from dagster._core.definitions.events import AssetKey
-from dagster._core.definitions.repository_definition import (
-    PendingRepositoryDefinition,
-    RepositoryDefinition,
-)
 from dagster._core.definitions.resource_annotation import ResourceParam
 from dagster._core.definitions.resource_definition import ResourceDefinition
 from dagster._core.definitions.unresolved_asset_job_definition import define_asset_job
@@ -32,7 +26,6 @@ from dagster._core.remote_representation.external_data import (
     NestedResourceType,
     RepositorySnap,
     ResourceJobUsageEntry,
-    ResourceSnap,
 )
 from dagster._core.snap import JobSnap
 
@@ -53,23 +46,14 @@ def test_repository_snap_all_props():
     repo_snap = RepositorySnap.from_def(noop_repo)
 
     assert repo_snap.name == "noop_repo"
-    assert len(repo_snap.job_datas) == 1
-    assert isinstance(repo_snap.job_datas[0], JobDataSnap)
+    assert len(repo_snap.job_datas) == 1  # pyright: ignore[reportArgumentType]
+    assert isinstance(repo_snap.job_datas[0], JobDataSnap)  # pyright: ignore[reportOptionalSubscript]
 
-    job_snapshot = repo_snap.job_datas[0].job
+    job_snapshot = repo_snap.job_datas[0].job  # pyright: ignore[reportOptionalSubscript]
     assert isinstance(job_snapshot, JobSnap)
     assert job_snapshot.name == "noop_job"
     assert job_snapshot.description is None
     assert job_snapshot.tags == {}
-
-
-def resolve_pending_repo_if_required(definitions: Definitions) -> RepositoryDefinition:
-    repo_or_caching_repo = definitions.get_inner_repository()
-    return (
-        repo_or_caching_repo.compute_repository_definition()
-        if isinstance(repo_or_caching_repo, PendingRepositoryDefinition)
-        else repo_or_caching_repo
-    )
 
 
 def test_repository_snap_definitions_resources_basic():
@@ -82,14 +66,14 @@ def test_repository_snap_definitions_resources_basic():
         resources={"foo": ResourceDefinition.hardcoded_resource("wrapped")},
     )
 
-    repo = resolve_pending_repo_if_required(defs)
+    repo = defs.get_repository_def()
     repo_snap = RepositorySnap.from_def(repo)
 
-    assert len(repo_snap.resources) == 1
-    assert repo_snap.resources[0].name == "foo"
-    assert repo_snap.resources[0].resource_snapshot.name == "foo"
-    assert repo_snap.resources[0].resource_snapshot.description is None
-    assert repo_snap.resources[0].configured_values == {}
+    assert len(repo_snap.resources) == 1  # pyright: ignore[reportArgumentType]
+    assert repo_snap.resources[0].name == "foo"  # pyright: ignore[reportOptionalSubscript]
+    assert repo_snap.resources[0].resource_snapshot.name == "foo"  # pyright: ignore[reportOptionalSubscript]
+    assert repo_snap.resources[0].resource_snapshot.description is None  # pyright: ignore[reportOptionalSubscript]
+    assert repo_snap.resources[0].configured_values == {}  # pyright: ignore[reportOptionalSubscript]
 
 
 def test_repository_snap_definitions_resources_nested() -> None:
@@ -104,7 +88,7 @@ def test_repository_snap_definitions_resources_nested() -> None:
         resources={"foo": MyOuterResource(inner=inner)},
     )
 
-    repo = resolve_pending_repo_if_required(defs)
+    repo = defs.get_repository_def()
     repo_snap = RepositorySnap.from_def(repo)
     assert repo_snap.resources
 
@@ -137,7 +121,7 @@ def test_repository_snap_definitions_resources_nested_top_level() -> None:
         resources={"foo": MyOuterResource(inner=inner), "inner": inner},
     )
 
-    repo = resolve_pending_repo_if_required(defs)
+    repo = defs.get_repository_def()
     repo_snap = RepositorySnap.from_def(repo)
     assert repo_snap.resources
 
@@ -179,7 +163,7 @@ def test_repository_snap_definitions_function_style_resources_nested() -> None:
         resources={"foo": my_outer_resource, "inner": my_inner_resource},
     )
 
-    repo = resolve_pending_repo_if_required(defs)
+    repo = defs.get_repository_def()
     repo_snap = RepositorySnap.from_def(repo)
     assert repo_snap.resources
 
@@ -227,7 +211,7 @@ def test_repository_snap_definitions_resources_nested_many() -> None:
         },
     )
 
-    repo = resolve_pending_repo_if_required(defs)
+    repo = defs.get_repository_def()
     repo_snap = RepositorySnap.from_def(repo)
     assert repo_snap.resources
 
@@ -271,23 +255,23 @@ def test_repository_snap_definitions_resources_complex():
         },
     )
 
-    repo = resolve_pending_repo_if_required(defs)
+    repo = defs.get_repository_def()
     repo_snap = RepositorySnap.from_def(repo)
 
-    assert len(repo_snap.resources) == 1
-    assert repo_snap.resources[0].name == "foo"
-    assert repo_snap.resources[0].resource_snapshot.name == "foo"
-    assert repo_snap.resources[0].resource_snapshot.description == "My description."
+    assert len(repo_snap.resources) == 1  # pyright: ignore[reportArgumentType]
+    assert repo_snap.resources[0].name == "foo"  # pyright: ignore[reportOptionalSubscript]
+    assert repo_snap.resources[0].resource_snapshot.name == "foo"  # pyright: ignore[reportOptionalSubscript]
+    assert repo_snap.resources[0].resource_snapshot.description == "My description."  # pyright: ignore[reportOptionalSubscript]
 
     # Ensure we get config snaps for the resource's fields
-    assert len(repo_snap.resources[0].config_field_snaps) == 1
-    snap = repo_snap.resources[0].config_field_snaps[0]
+    assert len(repo_snap.resources[0].config_field_snaps) == 1  # pyright: ignore[reportOptionalSubscript]
+    snap = repo_snap.resources[0].config_field_snaps[0]  # pyright: ignore[reportOptionalSubscript]
     assert snap.name == "my_string"
     assert not snap.is_required
     assert snap.default_value_as_json_str == '"bar"'
 
     # Ensure we get the configured values for the resource
-    assert repo_snap.resources[0].configured_values == {
+    assert repo_snap.resources[0].configured_values == {  # pyright: ignore[reportOptionalSubscript]
         "my_string": '"baz"',
     }
 
@@ -299,8 +283,8 @@ def test_repository_snap_empty():
 
     repo_snap = RepositorySnap.from_def(empty_repo)
     assert repo_snap.name == "empty_repo"
-    assert len(repo_snap.job_datas) == 0
-    assert len(repo_snap.resources) == 0
+    assert len(repo_snap.job_datas) == 0  # pyright: ignore[reportArgumentType]
+    assert len(repo_snap.resources) == 0  # pyright: ignore[reportArgumentType]
 
 
 def test_repository_snap_definitions_env_vars() -> None:
@@ -317,12 +301,12 @@ def test_repository_snap_definitions_env_vars() -> None:
         my_string: str
 
     class MyDataStructureResource(ConfigurableResource):
-        str_list: List[str]
-        str_dict: Dict[str, str]
+        str_list: list[str]
+        str_dict: dict[str, str]
 
     class MyResourceWithConfig(ConfigurableResource):
         config: MyInnerConfig
-        config_list: List[MyInnerConfig]
+        config_list: list[MyInnerConfig]
 
     @asset
     def my_asset(foo: MyStringResource):
@@ -362,7 +346,7 @@ def test_repository_snap_definitions_env_vars() -> None:
         },
     )
 
-    repo = resolve_pending_repo_if_required(defs)
+    repo = defs.get_repository_def()
     repo_snap = RepositorySnap.from_def(repo)
     assert repo_snap.utilized_env_vars
 
@@ -406,7 +390,7 @@ def test_repository_snap_definitions_resources_assets_usage() -> None:
         },
     )
 
-    repo = resolve_pending_repo_if_required(defs)
+    repo = defs.get_repository_def()
     repo_snap = RepositorySnap.from_def(repo)
     assert repo_snap.resources
 
@@ -455,7 +439,7 @@ def test_repository_snap_definitions_function_style_resources_assets_usage() -> 
         resources={"foo": my_resource},
     )
 
-    repo = resolve_pending_repo_if_required(defs)
+    repo = defs.get_repository_def()
     repo_snap = RepositorySnap.from_def(repo)
     assert repo_snap.resources
 
@@ -469,7 +453,7 @@ def test_repository_snap_definitions_function_style_resources_assets_usage() -> 
     ]
 
 
-def _to_dict(entries: List[ResourceJobUsageEntry]) -> Dict[str, List[str]]:
+def _to_dict(entries: list[ResourceJobUsageEntry]) -> dict[str, list[str]]:
     return {
         entry.job_name: sorted([str(handle) for handle in entry.node_handles]) for entry in entries
     }
@@ -511,7 +495,7 @@ def test_repository_snap_definitions_resources_job_op_usage() -> None:
         resources={"foo": MyResource(a_str="foo"), "bar": MyResource(a_str="bar")},
     )
 
-    repo = resolve_pending_repo_if_required(defs)
+    repo = defs.get_repository_def()
     repo_snap = RepositorySnap.from_def(repo)
     assert repo_snap.resources
 
@@ -571,7 +555,7 @@ def test_repository_snap_definitions_resources_job_op_usage_graph() -> None:
         resources={"foo": MyResource(a_str="foo"), "bar": MyResource(a_str="bar")},
     )
 
-    repo = resolve_pending_repo_if_required(defs)
+    repo = defs.get_repository_def()
     repo_snap = RepositorySnap.from_def(repo)
     assert repo_snap.resources
 
@@ -601,10 +585,10 @@ def test_asset_check():
     def my_asset():
         pass
 
-    @asset_check(asset=my_asset)
+    @asset_check(asset=my_asset)  # pyright: ignore[reportArgumentType]
     def my_asset_check(): ...
 
-    @asset_check(asset=my_asset)
+    @asset_check(asset=my_asset)  # pyright: ignore[reportArgumentType]
     def my_asset_check_2(): ...
 
     defs = Definitions(
@@ -612,12 +596,12 @@ def test_asset_check():
         asset_checks=[my_asset_check, my_asset_check_2],
     )
 
-    repo = resolve_pending_repo_if_required(defs)
+    repo = defs.get_repository_def()
     repo_snap = RepositorySnap.from_def(repo)
 
-    assert len(repo_snap.asset_check_nodes) == 2
-    assert repo_snap.asset_check_nodes[0].name == "my_asset_check"
-    assert repo_snap.asset_check_nodes[1].name == "my_asset_check_2"
+    assert len(repo_snap.asset_check_nodes) == 2  # pyright: ignore[reportArgumentType]
+    assert repo_snap.asset_check_nodes[0].name == "my_asset_check"  # pyright: ignore[reportOptionalSubscript]
+    assert repo_snap.asset_check_nodes[1].name == "my_asset_check_2"  # pyright: ignore[reportOptionalSubscript]
 
 
 def test_asset_check_in_asset_op():
@@ -630,7 +614,7 @@ def test_asset_check_in_asset_op():
     def my_asset():
         pass
 
-    @asset_check(asset=my_asset)
+    @asset_check(asset=my_asset)  # pyright: ignore[reportArgumentType]
     def my_asset_check(): ...
 
     defs = Definitions(
@@ -638,13 +622,13 @@ def test_asset_check_in_asset_op():
         asset_checks=[my_asset_check],
     )
 
-    repo = resolve_pending_repo_if_required(defs)
+    repo = defs.get_repository_def()
     repo_snap = RepositorySnap.from_def(repo)
 
-    assert len(repo_snap.asset_check_nodes) == 3
-    assert repo_snap.asset_check_nodes[0].name == "my_asset_check"
-    assert repo_snap.asset_check_nodes[1].name == "my_other_asset_check"
-    assert repo_snap.asset_check_nodes[2].name == "my_other_asset_check_2"
+    assert len(repo_snap.asset_check_nodes) == 3  # pyright: ignore[reportArgumentType]
+    assert repo_snap.asset_check_nodes[0].name == "my_asset_check"  # pyright: ignore[reportOptionalSubscript]
+    assert repo_snap.asset_check_nodes[1].name == "my_other_asset_check"  # pyright: ignore[reportOptionalSubscript]
+    assert repo_snap.asset_check_nodes[2].name == "my_other_asset_check_2"  # pyright: ignore[reportOptionalSubscript]
 
 
 def test_asset_check_multiple_jobs():
@@ -656,7 +640,7 @@ def test_asset_check_multiple_jobs():
     def my_asset():
         pass
 
-    @asset_check(asset=my_asset)
+    @asset_check(asset=my_asset)  # pyright: ignore[reportArgumentType]
     def my_asset_check(): ...
 
     my_job = define_asset_job("my_job", [my_asset])
@@ -667,7 +651,7 @@ def test_asset_check_multiple_jobs():
         jobs=[my_job],
     )
 
-    repo = resolve_pending_repo_if_required(defs)
+    repo = defs.get_repository_def()
     repo_snap = RepositorySnap.from_def(repo)
     assert repo_snap.asset_check_nodes
     assert len(repo_snap.asset_check_nodes) == 2
@@ -690,7 +674,7 @@ def test_asset_check_multi_asset():
 
     defs = Definitions(assets=[my_multi_asset])
 
-    repo = resolve_pending_repo_if_required(defs)
+    repo = defs.get_repository_def()
     repo_snap = RepositorySnap.from_def(repo)
     assert repo_snap.asset_check_nodes
     assert len(repo_snap.asset_check_nodes) == 1
@@ -698,9 +682,13 @@ def test_asset_check_multi_asset():
     assert repo_snap.asset_check_nodes[0].job_names == ["__ASSET_JOB"]
 
 
-def test_repository_snap_definitions_resources_schedule_sensor_usage():
+def test_repository_snap_definitions_resources_job_schedule_sensor_usage():
     class MyResource(ConfigurableResource):
         a_str: str
+
+    @asset
+    def my_asset(foo: MyResource):
+        pass
 
     @op
     def my_op() -> None:
@@ -710,12 +698,18 @@ def test_repository_snap_definitions_resources_schedule_sensor_usage():
     def my_job() -> None:
         my_op()
 
+    my_asset_job = define_asset_job("my_asset_job", [my_asset])
+
     @sensor(job=my_job)
     def my_sensor(foo: MyResource):
         pass
 
-    @sensor(job=my_job)
+    @sensor(job=my_asset_job)
     def my_sensor_two(foo: MyResource, bar: MyResource):
+        pass
+
+    @sensor(target=[my_asset])
+    def my_sensor_three():
         pass
 
     @schedule(job=my_job, cron_schedule="* * * * *")
@@ -732,33 +726,31 @@ def test_repository_snap_definitions_resources_schedule_sensor_usage():
             "bar": MyResource(a_str="bar"),
             "baz": MyResource(a_str="baz"),
         },
-        sensors=[my_sensor, my_sensor_two],
+        sensors=[my_sensor, my_sensor_two, my_sensor_three],
         schedules=[my_schedule, my_schedule_two],
     )
 
-    repo = resolve_pending_repo_if_required(defs)
+    repo = defs.get_repository_def()
     repo_snap = RepositorySnap.from_def(repo)
     assert repo_snap.resources
 
     assert len(repo_snap.resources) == 3
 
-    foo = [data for data in repo_snap.resources if data.name == "foo"]
-    assert len(foo) == 1
+    foo = next(iter(data for data in repo_snap.resources if data.name == "foo"))
 
-    assert set(cast(ResourceSnap, foo[0]).schedules_using) == {
+    assert set(foo.schedules_using) == {
         "my_schedule",
         "my_schedule_two",
     }
-    assert set(cast(ResourceSnap, foo[0]).sensors_using) == {"my_sensor", "my_sensor_two"}
+    assert set(foo.sensors_using) == {"my_sensor", "my_sensor_two"}
+    assert {entry.job_name for entry in foo.job_ops_using} == {"my_asset_job"}
 
-    bar = [data for data in repo_snap.resources if data.name == "bar"]
-    assert len(bar) == 1
+    bar = next(iter(data for data in repo_snap.resources if data.name == "bar"))
 
-    assert set(cast(ResourceSnap, bar[0]).schedules_using) == set()
-    assert set(cast(ResourceSnap, bar[0]).sensors_using) == {"my_sensor_two"}
+    assert set(bar.schedules_using) == set()
+    assert set(bar.sensors_using) == {"my_sensor_two"}
 
-    baz = [data for data in repo_snap.resources if data.name == "baz"]
-    assert len(baz) == 1
+    baz = next(iter(data for data in repo_snap.resources if data.name == "baz"))
 
-    assert set(cast(ResourceSnap, baz[0]).schedules_using) == set({"my_schedule_two"})
-    assert set(cast(ResourceSnap, baz[0]).sensors_using) == set()
+    assert set(baz.schedules_using) == set({"my_schedule_two"})
+    assert set(baz.sensors_using) == set()

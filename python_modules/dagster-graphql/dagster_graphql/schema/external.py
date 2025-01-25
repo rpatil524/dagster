@@ -1,9 +1,8 @@
 import asyncio
-from typing import TYPE_CHECKING, Dict, List, Optional
+from typing import TYPE_CHECKING, Optional
 
 import graphene
 from dagster import _check as check
-from dagster._core.definitions.asset_graph_differ import AssetGraphDiffer
 from dagster._core.definitions.partition import CachingDynamicPartitionsLoader
 from dagster._core.definitions.sensor_definition import SensorType
 from dagster._core.remote_representation import (
@@ -21,7 +20,6 @@ from dagster._core.remote_representation.handle import RepositoryHandle
 from dagster._core.workspace.context import WorkspaceProcessContext
 from dagster._core.workspace.workspace import CodeLocationEntry, CodeLocationLoadStatus
 
-from dagster_graphql.implementation.asset_checks_loader import AssetChecksLoader
 from dagster_graphql.implementation.fetch_solids import get_solid, get_solids
 from dagster_graphql.implementation.loader import RepositoryScopedBatchLoader, StaleStatusLoader
 from dagster_graphql.schema.asset_graph import GrapheneAssetGroup, GrapheneAssetNode
@@ -311,7 +309,6 @@ class GrapheneRepository(graphene.ObjectType):
             [
                 GrapheneSchedule(
                     schedule,
-                    repository.handle,
                     batch_loader.get_schedule_state(schedule.name),
                     batch_loader,
                 )
@@ -326,7 +323,6 @@ class GrapheneRepository(graphene.ObjectType):
         return [
             GrapheneSensor(
                 sensor,
-                repository.handle,
                 batch_loader.get_sensor_state(sensor.name),
                 batch_loader,
             )
@@ -374,21 +370,6 @@ class GrapheneRepository(graphene.ObjectType):
 
     def resolve_assetNodes(self, graphene_info: ResolveInfo):
         remote_nodes = self.get_repository(graphene_info).asset_graph.asset_nodes
-        asset_checks_loader = AssetChecksLoader(
-            context=graphene_info.context,
-            asset_keys=[node.key for node in remote_nodes],
-        )
-
-        asset_graph_differ = None
-        base_deployment_context = graphene_info.context.get_base_deployment_context()
-        if base_deployment_context is not None:
-            # then we are in a branch deployment
-            asset_graph_differ = AssetGraphDiffer.from_remote_repositories(
-                code_location_name=self._handle.location_name,
-                repository_name=self._handle.repository_name,
-                branch_workspace=graphene_info.context,
-                base_workspace=base_deployment_context,
-            )
 
         dynamic_partitions_loader = CachingDynamicPartitionsLoader(
             graphene_info.context.instance,
@@ -402,16 +383,14 @@ class GrapheneRepository(graphene.ObjectType):
         return [
             GrapheneAssetNode(
                 remote_node=remote_node,
-                asset_checks_loader=asset_checks_loader,
                 stale_status_loader=stale_status_loader,
                 dynamic_partitions_loader=dynamic_partitions_loader,
-                asset_graph_differ=asset_graph_differ,
             )
             for remote_node in remote_nodes
         ]
 
     def resolve_assetGroups(self, graphene_info: ResolveInfo):
-        groups: Dict[str, List[AssetNodeSnap]] = {}
+        groups: dict[str, list[AssetNodeSnap]] = {}
         for asset_node_snap in self.get_repository(graphene_info).get_asset_node_snaps():
             if not asset_node_snap.group_name:
                 continue
@@ -427,7 +406,7 @@ class GrapheneRepository(graphene.ObjectType):
             for group_name, asset_node_snaps in groups.items()
         ]
 
-    def resolve_allTopLevelResourceDetails(self, graphene_info) -> List[GrapheneResourceDetails]:
+    def resolve_allTopLevelResourceDetails(self, graphene_info) -> list[GrapheneResourceDetails]:
         return [
             GrapheneResourceDetails(
                 location_name=self._handle.location_name,

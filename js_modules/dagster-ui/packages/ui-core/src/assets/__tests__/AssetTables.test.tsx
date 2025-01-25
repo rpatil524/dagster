@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import {MemoryRouter} from 'react-router';
 import {RecoilRoot} from 'recoil';
 
+import {useAssetSelectionInput} from '../../asset-selection/input/useAssetSelectionInput';
 import {mockViewportClientRect, restoreViewportClientRect} from '../../testing/mocking';
 import {WorkspaceProvider} from '../../workspace/WorkspaceContext/WorkspaceContext';
 import {buildWorkspaceMocks} from '../../workspace/WorkspaceContext/__fixtures__/Workspace.fixtures';
@@ -31,6 +32,28 @@ const MOCKS = [
 
 // This file must be mocked because Jest can't handle `import.meta.url`.
 jest.mock('../../graph/asyncGraphLayout', () => ({}));
+
+jest.mock('shared/asset-selection/input/useAssetSelectionInput', () => {
+  const mock: typeof useAssetSelectionInput = ({
+    assets,
+    assetsLoading,
+  }: {
+    assets: any;
+    assetsLoading?: boolean;
+  }) => {
+    return {
+      filterInput: <div />,
+      fetchResult: {loading: false},
+      loading: !!assetsLoading,
+      filtered: assets,
+      assetSelection: '',
+      setAssetSelection: () => {},
+    };
+  };
+  return {
+    useAssetSelectionInput: mock,
+  };
+});
 
 describe('AssetTable', () => {
   beforeAll(() => {

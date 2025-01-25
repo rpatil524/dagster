@@ -179,6 +179,7 @@ export type PipelineRunLogsSubscription = {
                             name: string;
                             description: string | null;
                             type: string;
+                            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                             constraints: {
                               __typename: 'TableColumnConstraints';
                               nullable: boolean;
@@ -204,6 +205,7 @@ export type PipelineRunLogsSubscription = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -379,6 +381,7 @@ export type PipelineRunLogsSubscription = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -401,6 +404,7 @@ export type PipelineRunLogsSubscription = {
                         name: string;
                         description: string | null;
                         type: string;
+                        tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                         constraints: {
                           __typename: 'TableColumnConstraints';
                           nullable: boolean;
@@ -576,6 +580,7 @@ export type PipelineRunLogsSubscription = {
                             name: string;
                             description: string | null;
                             type: string;
+                            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                             constraints: {
                               __typename: 'TableColumnConstraints';
                               nullable: boolean;
@@ -601,6 +606,7 @@ export type PipelineRunLogsSubscription = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -760,6 +766,7 @@ export type PipelineRunLogsSubscription = {
                             name: string;
                             description: string | null;
                             type: string;
+                            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                             constraints: {
                               __typename: 'TableColumnConstraints';
                               nullable: boolean;
@@ -785,6 +792,7 @@ export type PipelineRunLogsSubscription = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -941,6 +949,7 @@ export type PipelineRunLogsSubscription = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -963,6 +972,7 @@ export type PipelineRunLogsSubscription = {
                         name: string;
                         description: string | null;
                         type: string;
+                        tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                         constraints: {
                           __typename: 'TableColumnConstraints';
                           nullable: boolean;
@@ -1111,6 +1121,7 @@ export type PipelineRunLogsSubscription = {
                             name: string;
                             description: string | null;
                             type: string;
+                            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                             constraints: {
                               __typename: 'TableColumnConstraints';
                               nullable: boolean;
@@ -1136,6 +1147,7 @@ export type PipelineRunLogsSubscription = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -1348,6 +1360,7 @@ export type PipelineRunLogsSubscription = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -1370,6 +1383,7 @@ export type PipelineRunLogsSubscription = {
                         name: string;
                         description: string | null;
                         type: string;
+                        tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                         constraints: {
                           __typename: 'TableColumnConstraints';
                           nullable: boolean;
@@ -1565,6 +1579,7 @@ export type PipelineRunLogsSubscription = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -1587,6 +1602,7 @@ export type PipelineRunLogsSubscription = {
                         name: string;
                         description: string | null;
                         type: string;
+                        tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                         constraints: {
                           __typename: 'TableColumnConstraints';
                           nullable: boolean;
@@ -1640,6 +1656,11 @@ export type PipelineRunLogsSubscription = {
               externalStderrUrl: string | null;
               eventType: Types.DagsterEventType | null;
               externalUrl: string | null;
+              shellCmd: {
+                __typename: 'LogRetrievalShellCommand';
+                stdout: string | null;
+                stderr: string | null;
+              } | null;
             }
           | {
               __typename: 'MaterializationEvent';
@@ -1765,6 +1786,7 @@ export type PipelineRunLogsSubscription = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -1787,6 +1809,7 @@ export type PipelineRunLogsSubscription = {
                         name: string;
                         description: string | null;
                         type: string;
+                        tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                         constraints: {
                           __typename: 'TableColumnConstraints';
                           nullable: boolean;
@@ -1943,6 +1966,7 @@ export type PipelineRunLogsSubscription = {
                             name: string;
                             description: string | null;
                             type: string;
+                            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                             constraints: {
                               __typename: 'TableColumnConstraints';
                               nullable: boolean;
@@ -1968,6 +1992,7 @@ export type PipelineRunLogsSubscription = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -2123,6 +2148,7 @@ export type PipelineRunLogsSubscription = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -2145,6 +2171,7 @@ export type PipelineRunLogsSubscription = {
                         name: string;
                         description: string | null;
                         type: string;
+                        tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                         constraints: {
                           __typename: 'TableColumnConstraints';
                           nullable: boolean;
@@ -2302,6 +2329,7 @@ export type PipelineRunLogsSubscription = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -2324,6 +2352,7 @@ export type PipelineRunLogsSubscription = {
                         name: string;
                         description: string | null;
                         type: string;
+                        tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                         constraints: {
                           __typename: 'TableColumnConstraints';
                           nullable: boolean;
@@ -2490,6 +2519,7 @@ export type PipelineRunLogsSubscription = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -2512,6 +2542,7 @@ export type PipelineRunLogsSubscription = {
                         name: string;
                         description: string | null;
                         type: string;
+                        tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                         constraints: {
                           __typename: 'TableColumnConstraints';
                           nullable: boolean;
@@ -2668,6 +2699,7 @@ export type PipelineRunLogsSubscription = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -2690,6 +2722,7 @@ export type PipelineRunLogsSubscription = {
                         name: string;
                         description: string | null;
                         type: string;
+                        tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                         constraints: {
                           __typename: 'TableColumnConstraints';
                           nullable: boolean;
@@ -2939,6 +2972,7 @@ export type PipelineRunLogsSubscription = {
                             name: string;
                             description: string | null;
                             type: string;
+                            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                             constraints: {
                               __typename: 'TableColumnConstraints';
                               nullable: boolean;
@@ -2964,6 +2998,7 @@ export type PipelineRunLogsSubscription = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -3121,6 +3156,7 @@ export type PipelineRunLogsSubscription = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -3143,6 +3179,7 @@ export type PipelineRunLogsSubscription = {
                         name: string;
                         description: string | null;
                         type: string;
+                        tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                         constraints: {
                           __typename: 'TableColumnConstraints';
                           nullable: boolean;
@@ -3299,6 +3336,7 @@ export type PipelineRunLogsSubscription = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -3321,6 +3359,7 @@ export type PipelineRunLogsSubscription = {
                         name: string;
                         description: string | null;
                         type: string;
+                        tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                         constraints: {
                           __typename: 'TableColumnConstraints';
                           nullable: boolean;
@@ -3519,6 +3558,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                       name: string;
                       description: string | null;
                       type: string;
+                      tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                       constraints: {
                         __typename: 'TableColumnConstraints';
                         nullable: boolean;
@@ -3541,6 +3581,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                     name: string;
                     description: string | null;
                     type: string;
+                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -3716,6 +3757,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                     name: string;
                     description: string | null;
                     type: string;
+                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -3738,6 +3780,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                   name: string;
                   description: string | null;
                   type: string;
+                  tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                   constraints: {
                     __typename: 'TableColumnConstraints';
                     nullable: boolean;
@@ -3908,6 +3951,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                       name: string;
                       description: string | null;
                       type: string;
+                      tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                       constraints: {
                         __typename: 'TableColumnConstraints';
                         nullable: boolean;
@@ -3930,6 +3974,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                     name: string;
                     description: string | null;
                     type: string;
+                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -4089,6 +4134,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                       name: string;
                       description: string | null;
                       type: string;
+                      tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                       constraints: {
                         __typename: 'TableColumnConstraints';
                         nullable: boolean;
@@ -4111,6 +4157,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                     name: string;
                     description: string | null;
                     type: string;
+                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -4267,6 +4314,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                     name: string;
                     description: string | null;
                     type: string;
+                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -4289,6 +4337,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                   name: string;
                   description: string | null;
                   type: string;
+                  tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                   constraints: {
                     __typename: 'TableColumnConstraints';
                     nullable: boolean;
@@ -4432,6 +4481,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                       name: string;
                       description: string | null;
                       type: string;
+                      tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                       constraints: {
                         __typename: 'TableColumnConstraints';
                         nullable: boolean;
@@ -4454,6 +4504,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                     name: string;
                     description: string | null;
                     type: string;
+                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -4666,6 +4717,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                     name: string;
                     description: string | null;
                     type: string;
+                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -4688,6 +4740,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                   name: string;
                   description: string | null;
                   type: string;
+                  tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                   constraints: {
                     __typename: 'TableColumnConstraints';
                     nullable: boolean;
@@ -4878,6 +4931,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                     name: string;
                     description: string | null;
                     type: string;
+                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -4900,6 +4954,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                   name: string;
                   description: string | null;
                   type: string;
+                  tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                   constraints: {
                     __typename: 'TableColumnConstraints';
                     nullable: boolean;
@@ -4948,6 +5003,11 @@ export type RunLogsSubscriptionSuccessFragment = {
         externalStderrUrl: string | null;
         eventType: Types.DagsterEventType | null;
         externalUrl: string | null;
+        shellCmd: {
+          __typename: 'LogRetrievalShellCommand';
+          stdout: string | null;
+          stderr: string | null;
+        } | null;
       }
     | {
         __typename: 'MaterializationEvent';
@@ -5073,6 +5133,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                     name: string;
                     description: string | null;
                     type: string;
+                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -5095,6 +5156,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                   name: string;
                   description: string | null;
                   type: string;
+                  tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                   constraints: {
                     __typename: 'TableColumnConstraints';
                     nullable: boolean;
@@ -5246,6 +5308,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                       name: string;
                       description: string | null;
                       type: string;
+                      tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                       constraints: {
                         __typename: 'TableColumnConstraints';
                         nullable: boolean;
@@ -5268,6 +5331,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                     name: string;
                     description: string | null;
                     type: string;
+                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -5423,6 +5487,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                     name: string;
                     description: string | null;
                     type: string;
+                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -5445,6 +5510,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                   name: string;
                   description: string | null;
                   type: string;
+                  tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                   constraints: {
                     __typename: 'TableColumnConstraints';
                     nullable: boolean;
@@ -5597,6 +5663,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                     name: string;
                     description: string | null;
                     type: string;
+                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -5619,6 +5686,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                   name: string;
                   description: string | null;
                   type: string;
+                  tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                   constraints: {
                     __typename: 'TableColumnConstraints';
                     nullable: boolean;
@@ -5780,6 +5848,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                     name: string;
                     description: string | null;
                     type: string;
+                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -5802,6 +5871,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                   name: string;
                   description: string | null;
                   type: string;
+                  tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                   constraints: {
                     __typename: 'TableColumnConstraints';
                     nullable: boolean;
@@ -5953,6 +6023,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                     name: string;
                     description: string | null;
                     type: string;
+                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -5975,6 +6046,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                   name: string;
                   description: string | null;
                   type: string;
+                  tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                   constraints: {
                     __typename: 'TableColumnConstraints';
                     nullable: boolean;
@@ -6219,6 +6291,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                       name: string;
                       description: string | null;
                       type: string;
+                      tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                       constraints: {
                         __typename: 'TableColumnConstraints';
                         nullable: boolean;
@@ -6241,6 +6314,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                     name: string;
                     description: string | null;
                     type: string;
+                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -6398,6 +6472,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                     name: string;
                     description: string | null;
                     type: string;
+                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -6420,6 +6495,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                   name: string;
                   description: string | null;
                   type: string;
+                  tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                   constraints: {
                     __typename: 'TableColumnConstraints';
                     nullable: boolean;
@@ -6571,6 +6647,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                     name: string;
                     description: string | null;
                     type: string;
+                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -6593,6 +6670,7 @@ export type RunLogsSubscriptionSuccessFragment = {
                   name: string;
                   description: string | null;
                   type: string;
+                  tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                   constraints: {
                     __typename: 'TableColumnConstraints';
                     nullable: boolean;
@@ -6804,6 +6882,7 @@ export type RunLogsQuery = {
                             name: string;
                             description: string | null;
                             type: string;
+                            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                             constraints: {
                               __typename: 'TableColumnConstraints';
                               nullable: boolean;
@@ -6829,6 +6908,7 @@ export type RunLogsQuery = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -7004,6 +7084,7 @@ export type RunLogsQuery = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -7026,6 +7107,7 @@ export type RunLogsQuery = {
                         name: string;
                         description: string | null;
                         type: string;
+                        tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                         constraints: {
                           __typename: 'TableColumnConstraints';
                           nullable: boolean;
@@ -7201,6 +7283,7 @@ export type RunLogsQuery = {
                             name: string;
                             description: string | null;
                             type: string;
+                            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                             constraints: {
                               __typename: 'TableColumnConstraints';
                               nullable: boolean;
@@ -7226,6 +7309,7 @@ export type RunLogsQuery = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -7385,6 +7469,7 @@ export type RunLogsQuery = {
                             name: string;
                             description: string | null;
                             type: string;
+                            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                             constraints: {
                               __typename: 'TableColumnConstraints';
                               nullable: boolean;
@@ -7410,6 +7495,7 @@ export type RunLogsQuery = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -7566,6 +7652,7 @@ export type RunLogsQuery = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -7588,6 +7675,7 @@ export type RunLogsQuery = {
                         name: string;
                         description: string | null;
                         type: string;
+                        tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                         constraints: {
                           __typename: 'TableColumnConstraints';
                           nullable: boolean;
@@ -7736,6 +7824,7 @@ export type RunLogsQuery = {
                             name: string;
                             description: string | null;
                             type: string;
+                            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                             constraints: {
                               __typename: 'TableColumnConstraints';
                               nullable: boolean;
@@ -7761,6 +7850,7 @@ export type RunLogsQuery = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -7973,6 +8063,7 @@ export type RunLogsQuery = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -7995,6 +8086,7 @@ export type RunLogsQuery = {
                         name: string;
                         description: string | null;
                         type: string;
+                        tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                         constraints: {
                           __typename: 'TableColumnConstraints';
                           nullable: boolean;
@@ -8190,6 +8282,7 @@ export type RunLogsQuery = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -8212,6 +8305,7 @@ export type RunLogsQuery = {
                         name: string;
                         description: string | null;
                         type: string;
+                        tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                         constraints: {
                           __typename: 'TableColumnConstraints';
                           nullable: boolean;
@@ -8265,6 +8359,11 @@ export type RunLogsQuery = {
               externalStderrUrl: string | null;
               eventType: Types.DagsterEventType | null;
               externalUrl: string | null;
+              shellCmd: {
+                __typename: 'LogRetrievalShellCommand';
+                stdout: string | null;
+                stderr: string | null;
+              } | null;
             }
           | {
               __typename: 'MaterializationEvent';
@@ -8390,6 +8489,7 @@ export type RunLogsQuery = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -8412,6 +8512,7 @@ export type RunLogsQuery = {
                         name: string;
                         description: string | null;
                         type: string;
+                        tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                         constraints: {
                           __typename: 'TableColumnConstraints';
                           nullable: boolean;
@@ -8568,6 +8669,7 @@ export type RunLogsQuery = {
                             name: string;
                             description: string | null;
                             type: string;
+                            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                             constraints: {
                               __typename: 'TableColumnConstraints';
                               nullable: boolean;
@@ -8593,6 +8695,7 @@ export type RunLogsQuery = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -8748,6 +8851,7 @@ export type RunLogsQuery = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -8770,6 +8874,7 @@ export type RunLogsQuery = {
                         name: string;
                         description: string | null;
                         type: string;
+                        tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                         constraints: {
                           __typename: 'TableColumnConstraints';
                           nullable: boolean;
@@ -8927,6 +9032,7 @@ export type RunLogsQuery = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -8949,6 +9055,7 @@ export type RunLogsQuery = {
                         name: string;
                         description: string | null;
                         type: string;
+                        tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                         constraints: {
                           __typename: 'TableColumnConstraints';
                           nullable: boolean;
@@ -9115,6 +9222,7 @@ export type RunLogsQuery = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -9137,6 +9245,7 @@ export type RunLogsQuery = {
                         name: string;
                         description: string | null;
                         type: string;
+                        tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                         constraints: {
                           __typename: 'TableColumnConstraints';
                           nullable: boolean;
@@ -9293,6 +9402,7 @@ export type RunLogsQuery = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -9315,6 +9425,7 @@ export type RunLogsQuery = {
                         name: string;
                         description: string | null;
                         type: string;
+                        tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                         constraints: {
                           __typename: 'TableColumnConstraints';
                           nullable: boolean;
@@ -9564,6 +9675,7 @@ export type RunLogsQuery = {
                             name: string;
                             description: string | null;
                             type: string;
+                            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                             constraints: {
                               __typename: 'TableColumnConstraints';
                               nullable: boolean;
@@ -9589,6 +9701,7 @@ export type RunLogsQuery = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -9746,6 +9859,7 @@ export type RunLogsQuery = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -9768,6 +9882,7 @@ export type RunLogsQuery = {
                         name: string;
                         description: string | null;
                         type: string;
+                        tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                         constraints: {
                           __typename: 'TableColumnConstraints';
                           nullable: boolean;
@@ -9924,6 +10039,7 @@ export type RunLogsQuery = {
                           name: string;
                           description: string | null;
                           type: string;
+                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -9946,6 +10062,7 @@ export type RunLogsQuery = {
                         name: string;
                         description: string | null;
                         type: string;
+                        tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                         constraints: {
                           __typename: 'TableColumnConstraints';
                           nullable: boolean;
@@ -9982,6 +10099,6 @@ export type RunLogsQuery = {
     | {__typename: 'RunNotFoundError'};
 };
 
-export const PipelineRunLogsSubscriptionVersion = '13532cd4684f573c38bb258cce7bb886ba469e571cf40c463c0cfb5f74a4c6f9';
+export const PipelineRunLogsSubscriptionVersion = '9f7f83476b6839dabd890487982ba453adb7cee3340c47aebb7f189492784023';
 
-export const RunLogsQueryVersion = 'd8fba7083a0145d5600ba824f0f2353e51a3c4e1f6bfd2aad32074270e8283d0';
+export const RunLogsQueryVersion = '6086ddc4fb1ea5e12a73049ba83df08747ecd1a9d3443eeb7e2875fddd55fa9e';

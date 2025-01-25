@@ -1,12 +1,11 @@
 from pathlib import Path
-from typing import Dict, Tuple
 
 from setuptools import find_packages, setup
 
 
-def get_version() -> Tuple[str, str, str]:
-    version: Dict[str, str] = {}
-    sdf_version: Dict[str, str] = {}
+def get_version() -> tuple[str, str, str]:
+    version: dict[str, str] = {}
+    sdf_version: dict[str, str] = {}
     with open(Path(__file__).parent / "dagster_sdf/version.py", encoding="utf8") as fp:
         exec(fp.read(), version)
 
@@ -32,7 +31,6 @@ setup(
     description="A Dagster integration for sdf",
     url="https://github.com/dagster-io/dagster/tree/master/python_modules/libraries/dagster-sdf",
     classifiers=[
-        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
@@ -42,7 +40,7 @@ setup(
     ],
     packages=find_packages(exclude=["dagster_sdf_tests*"]),
     include_package_data=True,
-    python_requires=">=3.8,<3.13",
+    python_requires=">=3.9,<3.13",
     install_requires=[
         f"dagster{pin}",
         f"sdf-cli>={SDF_VERSION_LOWER_BOUND},<{SDF_VERSION_UPPER_BOUND}",

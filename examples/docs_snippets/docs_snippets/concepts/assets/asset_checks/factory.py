@@ -1,6 +1,6 @@
-from typing import Any, Mapping, Sequence
-
-from mock import MagicMock
+from collections.abc import Mapping, Sequence
+from typing import Any
+from unittest.mock import MagicMock
 
 from dagster import (
     AssetCheckResult,

@@ -1,5 +1,5 @@
-import sys
-from typing import List, Optional
+from enum import Enum
+from typing import Optional
 
 import dagster
 import pydantic
@@ -113,8 +113,8 @@ def test_struct_config():
     assert DecoratedOpFunction(a_struct_config_op).has_config_arg()
 
     # test fields are inferred correctly
-    assert a_struct_config_op.config_schema.config_type.kind == ConfigTypeKind.STRICT_SHAPE
-    assert list(a_struct_config_op.config_schema.config_type.fields.keys()) == [
+    assert a_struct_config_op.config_schema.config_type.kind == ConfigTypeKind.STRICT_SHAPE  # pyright: ignore[reportOptionalMemberAccess]
+    assert list(a_struct_config_op.config_schema.config_type.fields.keys()) == [  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
         "a_string",
         "an_int",
     ]
@@ -290,8 +290,8 @@ def test_nested_struct_config():
     assert DecoratedOpFunction(a_struct_config_op).has_config_arg()
 
     # test fields are inferred correctly
-    assert a_struct_config_op.config_schema.config_type.kind == ConfigTypeKind.STRICT_SHAPE
-    assert list(a_struct_config_op.config_schema.config_type.fields.keys()) == [
+    assert a_struct_config_op.config_schema.config_type.kind == ConfigTypeKind.STRICT_SHAPE  # pyright: ignore[reportOptionalMemberAccess]
+    assert list(a_struct_config_op.config_schema.config_type.fields.keys()) == [  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
         "a_nested_value",
         "a_bool",
     ]
@@ -349,7 +349,7 @@ def test_direct_op_invocation_complex_config() -> None:
         foo: str
         bar: bool
         baz: int
-        qux: List[str]
+        qux: list[str]
 
     @op
     def basic_op(context, config: MyBasicOpConfig):
@@ -443,7 +443,6 @@ def test_validate_run_config():
         validate_run_config(job_requires_config)
 
 
-@pytest.mark.skipif(sys.version_info < (3, 8), reason="requires python3.8")
 def test_cached_property():
     from functools import cached_property
 
@@ -709,7 +708,7 @@ def test_structured_run_config_optional() -> None:
     class ANewConfigOpConfig(Config):
         a_string: Optional[str]
         an_int: Optional[int] = None
-        a_float: float = PyField(None)
+        a_float: float = PyField(None)  # type: ignore
 
     executed = {}
 
@@ -807,7 +806,7 @@ def test_structured_run_config_assets():
 
 def test_structured_run_config_assets_optional() -> None:
     class AnAssetConfig(Config):
-        a_string: str = PyField(None)
+        a_string: str = PyField(None)  # type: ignore
         an_int: Optional[int] = None
 
     executed = {}
@@ -1056,3 +1055,20 @@ def test_run_config_equality() -> None:
         },
     }
     assert RunConfig(config_dict) == RunConfig(config_dict)
+
+
+def test_to_config_dict() -> None:
+    class Color(Enum):
+        RED = 1
+        GREEN = 2
+        BLUE = 3
+
+    class MyConfig(Config):
+        num: int = 1
+        opt_str: Optional[str] = None
+        enum: Color = Color.RED
+        arr: list[int] = []
+        opt_arr: Optional[list[int]] = None
+
+    config_dict = RunConfig({"my_asset_job": MyConfig()}).to_config_dict()
+    assert config_dict["ops"]["my_asset_job"]["config"] == {"num": 1, "enum": "RED", "arr": []}

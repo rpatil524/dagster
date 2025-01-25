@@ -1,18 +1,24 @@
 import inspect
+from collections.abc import Mapping
 from enum import Enum
-from typing import Any, Dict, List, Literal, Mapping, Optional, Type, TypeVar, Union
+from typing import Annotated, Any, Literal, Optional, TypeVar, Union
 
-from typing_extensions import Annotated, get_args, get_origin
+from typing_extensions import get_args, get_origin
 
+import dagster._check as check
 from dagster import (
     Enum as DagsterEnum,
     EnumValue as DagsterEnumValue,
+    Field,
+    Selector,
 )
 from dagster._config.config_type import Array, ConfigType, Noneable
+from dagster._config.field_utils import FIELD_NO_DEFAULT_PROVIDED, Map, convert_potential_field
 from dagster._config.post_process import resolve_defaults
 from dagster._config.pythonic_config.attach_other_object_to_context import (
     IAttachDifferentObjectToOpContext as IAttachDifferentObjectToOpContext,
 )
+from dagster._config.pythonic_config.type_check_utils import safe_is_subclass
 from dagster._config.source import BoolSource, IntSource, StringSource
 from dagster._config.validate import validate_config
 from dagster._core.definitions.definition_config_schema import DefinitionConfigSchema
@@ -22,19 +28,6 @@ from dagster._core.errors import (
     DagsterInvalidDefinitionError,
     DagsterInvalidPythonicConfigDefinitionError,
 )
-
-try:
-    from functools import cached_property  # type: ignore  # (py37 compat)
-except ImportError:
-
-    class cached_property:
-        pass
-
-
-import dagster._check as check
-from dagster import Field, Selector
-from dagster._config.field_utils import FIELD_NO_DEFAULT_PROVIDED, Map, convert_potential_field
-from dagster._config.pythonic_config.type_check_utils import safe_is_subclass
 from dagster._model.pydantic_compat_layer import ModelFieldCompat, PydanticUndefined, model_fields
 from dagster._utils.typing_api import is_closed_python_optional_type
 
@@ -91,7 +84,7 @@ TResValue = TypeVar("TResValue")
 
 
 def _convert_pydantic_field(
-    pydantic_field: ModelFieldCompat, model_cls: Optional[Type] = None
+    pydantic_field: ModelFieldCompat, model_cls: Optional[type] = None
 ) -> Field:
     """Transforms a Pydantic field into a corresponding Dagster config field.
 
@@ -165,18 +158,18 @@ def _config_type_for_type_on_pydantic_field(
         from pydantic import ConstrainedFloat, ConstrainedInt, ConstrainedStr
 
         # special case pydantic constrained types to their source equivalents
-        if safe_is_subclass(potential_dagster_type, ConstrainedStr):
+        if safe_is_subclass(potential_dagster_type, ConstrainedStr):  # type: ignore
             return StringSource
         # no FloatSource, so we just return float
-        elif safe_is_subclass(potential_dagster_type, ConstrainedFloat):
+        elif safe_is_subclass(potential_dagster_type, ConstrainedFloat):  # type: ignore
             potential_dagster_type = float
-        elif safe_is_subclass(potential_dagster_type, ConstrainedInt):
+        elif safe_is_subclass(potential_dagster_type, ConstrainedInt):  # type: ignore
             return IntSource
     except ImportError:
         # These types do not exist in Pydantic 2.x
         pass
 
-    if safe_is_subclass(get_origin(potential_dagster_type), List):
+    if safe_is_subclass(get_origin(potential_dagster_type), list):
         list_inner_type = get_args(potential_dagster_type)[0]
         return Array(_config_type_for_type_on_pydantic_field(list_inner_type))
     elif is_closed_python_optional_type(potential_dagster_type):
@@ -184,7 +177,7 @@ def _config_type_for_type_on_pydantic_field(
             arg for arg in get_args(potential_dagster_type) if arg is not type(None)
         )
         return Noneable(_config_type_for_type_on_pydantic_field(optional_inner_type))
-    elif safe_is_subclass(get_origin(potential_dagster_type), Dict) or safe_is_subclass(
+    elif safe_is_subclass(get_origin(potential_dagster_type), dict) or safe_is_subclass(
         get_origin(potential_dagster_type), Mapping
     ):
         key_type, value_type = get_args(potential_dagster_type)

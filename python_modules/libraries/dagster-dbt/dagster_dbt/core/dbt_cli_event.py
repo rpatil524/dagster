@@ -1,23 +1,13 @@
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import InitVar, dataclass
 from pathlib import Path
-from typing import (
-    AbstractSet,
-    Any,
-    Dict,
-    Iterator,
-    Mapping,
-    NamedTuple,
-    Optional,
-    Sequence,
-    Set,
-    Union,
-    cast,
-)
+from typing import AbstractSet, Any, NamedTuple, Optional, Union, cast  # noqa: UP035
 
 import dateutil.parser
 from dagster import (
     AssetCheckResult,
     AssetCheckSeverity,
+    AssetExecutionContext,
     AssetMaterialization,
     AssetObservation,
     OpExecutionContext,
@@ -39,7 +29,6 @@ from sqlglot.lineage import lineage
 from sqlglot.optimizer import optimize
 
 from dagster_dbt.asset_utils import (
-    dagster_name_fn,
     default_metadata_from_dbt_resource_props,
     get_asset_check_key_for_test,
 )
@@ -56,17 +45,17 @@ logger = get_dagster_logger()
 
 
 class EventHistoryMetadata(NamedTuple):
-    columns: Dict[str, Dict[str, Any]]
-    parents: Dict[str, Dict[str, Any]]
+    columns: dict[str, dict[str, Any]]
+    parents: dict[str, dict[str, Any]]
 
 
 def _build_column_lineage_metadata(
     event_history_metadata: EventHistoryMetadata,
-    dbt_resource_props: Dict[str, Any],
+    dbt_resource_props: dict[str, Any],
     manifest: Mapping[str, Any],
     dagster_dbt_translator: DagsterDbtTranslator,
     target_path: Optional[Path],
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Process the lineage metadata for a dbt CLI event.
 
     Args:
@@ -86,7 +75,7 @@ def _build_column_lineage_metadata(
     ):
         return {}
 
-    event_node_info: Dict[str, Any] = dbt_resource_props
+    event_node_info: dict[str, Any] = dbt_resource_props
     unique_id: str = event_node_info["unique_id"]
 
     node_resource_type: str = event_node_info["resource_type"]
@@ -124,7 +113,7 @@ def _build_column_lineage_metadata(
     node_sql_path = target_path.joinpath(
         "compiled",
         package_name,
-        dbt_resource_props["original_file_path"],
+        dbt_resource_props["original_file_path"].replace("\\", "/"),
     )
     optimized_node_ast = cast(
         exp.Query,
@@ -140,7 +129,7 @@ def _build_column_lineage_metadata(
     sqlglot_column_names = set(optimized_node_ast.named_selects)
 
     # 3. For each column, retrieve its dependencies on upstream columns from direct parents.
-    dbt_parent_resource_props_by_relation_name: Dict[str, Dict[str, Any]] = {}
+    dbt_parent_resource_props_by_relation_name: dict[str, dict[str, Any]] = {}
     for parent_unique_id in dbt_resource_props["depends_on"]["nodes"]:
         is_resource_type_source = parent_unique_id.startswith("source")
         parent_dbt_resource_props = (
@@ -160,7 +149,7 @@ def _build_column_lineage_metadata(
         column for column in schema_column_names if column not in normalized_sqlglot_column_names
     }
 
-    deps_by_column: Dict[str, Sequence[TableColumnDep]] = {}
+    deps_by_column: dict[str, Sequence[TableColumnDep]] = {}
     if implicit_alias_column_names:
         logger.warning(
             "The following columns are implicitly aliased and will be marked with an "
@@ -173,7 +162,7 @@ def _build_column_lineage_metadata(
         if column_name.lower() not in schema_column_names:
             continue
 
-        column_deps: Set[TableColumnDep] = set()
+        column_deps: set[TableColumnDep] = set()
         for sqlglot_lineage_node in lineage(
             column=column_name,
             sql=optimized_node_ast,
@@ -227,10 +216,10 @@ class DbtCliEventMessage:
             current event, gathered from previous historical events.
     """
 
-    raw_event: Dict[str, Any]
-    event_history_metadata: InitVar[Dict[str, Any]]
+    raw_event: dict[str, Any]
+    event_history_metadata: InitVar[dict[str, Any]]
 
-    def __post_init__(self, event_history_metadata: Dict[str, Any]):
+    def __post_init__(self, event_history_metadata: dict[str, Any]):
         self._event_history_metadata = event_history_metadata
 
     def __str__(self) -> str:
@@ -247,7 +236,7 @@ class DbtCliEventMessage:
         return bool(self._event_history_metadata) and "parents" in self._event_history_metadata
 
     @staticmethod
-    def is_result_event(raw_event: Dict[str, Any]) -> bool:
+    def is_result_event(raw_event: dict[str, Any]) -> bool:
         return raw_event["info"]["name"] in set(
             ["LogSeedResult", "LogModelResult", "LogSnapshotResult", "LogTestResult"]
         ) and not raw_event["data"]["node_info"]["unique_id"].startswith("unit_test")
@@ -261,7 +250,7 @@ class DbtCliEventMessage:
         description: Optional[str] = None,
     ) -> Iterator[AssetObservation]:
         for upstream_unique_id in upstream_unique_ids:
-            upstream_resource_props: Dict[str, Any] = validated_manifest["nodes"].get(
+            upstream_resource_props: dict[str, Any] = validated_manifest["nodes"].get(
                 upstream_unique_id
             ) or validated_manifest["sources"].get(upstream_unique_id)
             upstream_asset_key = dagster_dbt_translator.get_asset_key(upstream_resource_props)
@@ -277,7 +266,7 @@ class DbtCliEventMessage:
         self,
         manifest: DbtManifestParam,
         dagster_dbt_translator: DagsterDbtTranslator = DagsterDbtTranslator(),
-        context: Optional[OpExecutionContext] = None,
+        context: Optional[Union[OpExecutionContext, AssetExecutionContext]] = None,
         target_path: Optional[Path] = None,
     ) -> Iterator[Union[Output, AssetMaterialization, AssetObservation, AssetCheckResult]]:
         """Convert a dbt CLI event to a set of corresponding Dagster events.
@@ -286,7 +275,7 @@ class DbtCliEventMessage:
             manifest (Union[Mapping[str, Any], str, Path]): The dbt manifest blob.
             dagster_dbt_translator (DagsterDbtTranslator): Optionally, a custom translator for
                 linking dbt nodes to Dagster assets.
-            context (Optional[OpExecutionContext]): The execution context.
+            context (Optional[Union[OpExecutionContext, AssetExecutionContext]]): The execution context.
             target_path (Optional[Path]): An explicit path to a target folder used to retrieve
                 dbt artifacts while generating events.
 
@@ -306,7 +295,7 @@ class DbtCliEventMessage:
         if not self.is_result_event(self.raw_event):
             return
 
-        event_node_info: Dict[str, Any] = self.raw_event["data"].get("node_info")
+        event_node_info: dict[str, Any] = self.raw_event["data"].get("node_info")
         if not event_node_info:
             return
 
@@ -394,19 +383,18 @@ class DbtCliEventMessage:
                     exc_info=True,
                 )
 
-            if has_asset_def:
+            dbt_resource_props = manifest["nodes"][unique_id]
+            asset_key = dagster_dbt_translator.get_asset_key(dbt_resource_props)
+            if context and has_asset_def:
                 yield Output(
                     value=None,
-                    output_name=dagster_name_fn(event_node_info),
+                    output_name=asset_key.to_python_identifier(),
                     metadata={
                         **default_metadata,
                         **lineage_metadata,
                     },
                 )
             else:
-                dbt_resource_props = manifest["nodes"][unique_id]
-                asset_key = dagster_dbt_translator.get_asset_key(dbt_resource_props)
-
                 yield AssetMaterialization(
                     asset_key=asset_key,
                     metadata={

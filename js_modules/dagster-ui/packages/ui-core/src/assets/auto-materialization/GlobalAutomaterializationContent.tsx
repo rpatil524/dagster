@@ -7,12 +7,11 @@ import {
   Subtitle2,
   Table,
 } from '@dagster-io/ui-components';
-import {useCallback, useMemo, useState} from 'react';
+import {useCallback, useEffect, useMemo, useState} from 'react';
 
 import {ASSET_DAEMON_TICKS_QUERY} from './AssetDaemonTicksQuery';
 import {AutomaterializationTickDetailDialog} from './AutomaterializationTickDetailDialog';
 import {AutomaterializeRunHistoryTable} from './AutomaterializeRunHistoryTable';
-import {DeclarativeAutomationBanner} from './DeclarativeAutomationBanner';
 import {InstanceAutomaterializationEvaluationHistoryTable} from './InstanceAutomaterializationEvaluationHistoryTable';
 import {
   AssetDaemonTickFragment,
@@ -40,7 +39,7 @@ const RUNS_FILTER: RunsFilter = {tags: [{key: 'dagster/auto_materialize', value:
 
 export const GlobalAutomaterializationContent = () => {
   const automaterialize = useAutomaterializeDaemonStatus();
-  const {flagRunsFeed} = useFeatureFlags();
+  const {flagLegacyRunsPage} = useFeatureFlags();
   const confirm = useConfirmation();
 
   const {permissions: {canToggleAutoMaterialize} = {}} = useUnscopedPermissions();
@@ -48,6 +47,7 @@ export const GlobalAutomaterializationContent = () => {
   const [isPaused, setIsPaused] = useState(false);
   const [statuses, setStatuses] = useState<undefined | InstigationTickStatus[]>(undefined);
   const [timeRange, setTimerange] = useState<undefined | [number, number]>(undefined);
+
   const getVariables = useCallback(
     (now = Date.now()) => {
       if (timeRange || statuses) {
@@ -72,6 +72,11 @@ export const GlobalAutomaterializationContent = () => {
     async () => await fetch({variables: getVariables()}),
     [fetch, getVariables],
   );
+
+  // When the variables have changed (e.g. due to pagination), refresh.
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
   useRefreshAtInterval({
     refresh,
@@ -146,9 +151,6 @@ export const GlobalAutomaterializationContent = () => {
 
   return (
     <>
-      <Box padding={{vertical: 12, horizontal: 24}}>
-        <DeclarativeAutomationBanner />
-      </Box>
       <Table>
         <tbody>
           <tr>
@@ -219,15 +221,16 @@ export const GlobalAutomaterializationContent = () => {
               setTimerange={setTimerange}
               actionBarComponents={tableViewSwitch}
             />
-          ) : flagRunsFeed ? (
+          ) : flagLegacyRunsPage ? (
+            <AutomaterializeRunHistoryTable setTableView={setTableView} />
+          ) : (
             <Box margin={{top: 32}} border="top">
               <RunsFeedTableWithFilters
                 filter={RUNS_FILTER}
                 actionBarComponents={tableViewSwitch}
+                includeRunsFromBackfills={true}
               />
             </Box>
-          ) : (
-            <AutomaterializeRunHistoryTable setTableView={setTableView} />
           )}
         </>
       )}

@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import Dict, Optional, Tuple
+from typing import Optional
 
 import polars as pl
 import polars.testing as pl_testing
@@ -24,14 +24,13 @@ from dagster_polars import (
     LazyFramePartitions,
     PolarsDeltaIOManager,
     PolarsParquetIOManager,
-    StorageMetadata,
 )
 
-from dagster_polars_tests.utils import DEPRECATED_STORAGE_METADATA_STRING, get_saved_path
+from dagster_polars_tests.utils import get_saved_path
 
 
 def test_polars_upath_io_manager_stats_metadata(
-    io_manager_and_lazy_df: Tuple[BasePolarsUPathIOManager, pl.LazyFrame],
+    io_manager_and_lazy_df: tuple[BasePolarsUPathIOManager, pl.LazyFrame],
 ):
     manager, _ = io_manager_and_lazy_df
 
@@ -56,7 +55,7 @@ def test_polars_upath_io_manager_stats_metadata(
 
 
 def test_polars_upath_io_manager_type_annotations(
-    io_manager_and_lazy_df: Tuple[BasePolarsUPathIOManager, pl.LazyFrame],
+    io_manager_and_lazy_df: tuple[BasePolarsUPathIOManager, pl.LazyFrame],
 ):
     manager, df = io_manager_and_lazy_df
 
@@ -75,7 +74,7 @@ def test_polars_upath_io_manager_type_annotations(
         return df.with_columns(pl.lit(context.partition_key).alias("partition"))
 
     @asset(io_manager_def=manager)
-    def downstream_multi_partitioned_lazy(upstream_partitioned: Dict[str, pl.LazyFrame]) -> None:
+    def downstream_multi_partitioned_lazy(upstream_partitioned: dict[str, pl.LazyFrame]) -> None:
         for _df in upstream_partitioned.values():
             assert isinstance(_df, pl.LazyFrame), type(_df)
         assert set(upstream_partitioned.keys()) == {"a", "b"}, upstream_partitioned.keys()
@@ -97,7 +96,7 @@ def test_polars_upath_io_manager_type_annotations(
 
 
 def test_polars_upath_io_manager_nested_dtypes(
-    io_manager_and_lazy_df: Tuple[BasePolarsUPathIOManager, pl.LazyFrame],
+    io_manager_and_lazy_df: tuple[BasePolarsUPathIOManager, pl.LazyFrame],
 ):
     manager, df = io_manager_and_lazy_df
 
@@ -124,7 +123,7 @@ def test_polars_upath_io_manager_nested_dtypes(
 
 
 def test_polars_upath_io_manager_input_optional_lazy(
-    io_manager_and_lazy_df: Tuple[BasePolarsUPathIOManager, pl.LazyFrame],
+    io_manager_and_lazy_df: tuple[BasePolarsUPathIOManager, pl.LazyFrame],
 ):
     manager, df = io_manager_and_lazy_df
 
@@ -143,7 +142,7 @@ def test_polars_upath_io_manager_input_optional_lazy(
 
 
 def test_polars_upath_io_manager_input_optional_lazy_e2e(
-    io_manager_and_lazy_df: Tuple[BasePolarsUPathIOManager, pl.LazyFrame],
+    io_manager_and_lazy_df: tuple[BasePolarsUPathIOManager, pl.LazyFrame],
 ):
     manager, df = io_manager_and_lazy_df
 
@@ -162,7 +161,7 @@ def test_polars_upath_io_manager_input_optional_lazy_e2e(
 
 
 def test_polars_upath_io_manager_input_dict_lazy(
-    io_manager_and_lazy_df: Tuple[BasePolarsUPathIOManager, pl.LazyFrame],
+    io_manager_and_lazy_df: tuple[BasePolarsUPathIOManager, pl.LazyFrame],
 ):
     manager, df = io_manager_and_lazy_df
 
@@ -171,7 +170,7 @@ def test_polars_upath_io_manager_input_dict_lazy(
         return df.with_columns(pl.lit(context.partition_key).alias("partition"))
 
     @asset(io_manager_def=manager)
-    def downstream(upstream: Dict[str, pl.LazyFrame]) -> pl.LazyFrame:
+    def downstream(upstream: dict[str, pl.LazyFrame]) -> pl.LazyFrame:
         dfs = []
         for df in upstream.values():
             assert isinstance(df, pl.LazyFrame)
@@ -190,7 +189,7 @@ def test_polars_upath_io_manager_input_dict_lazy(
 
 
 def test_polars_upath_io_manager_input_lazy_frame_partitions_lazy(
-    io_manager_and_lazy_df: Tuple[BasePolarsUPathIOManager, pl.LazyFrame],
+    io_manager_and_lazy_df: tuple[BasePolarsUPathIOManager, pl.LazyFrame],
 ):
     manager, df = io_manager_and_lazy_df
 
@@ -218,7 +217,7 @@ def test_polars_upath_io_manager_input_lazy_frame_partitions_lazy(
 
 
 def test_polars_upath_io_manager_input_optional_lazy_return_none(
-    io_manager_and_lazy_df: Tuple[BasePolarsUPathIOManager, pl.LazyFrame],
+    io_manager_and_lazy_df: tuple[BasePolarsUPathIOManager, pl.LazyFrame],
 ):
     manager, df = io_manager_and_lazy_df
 
@@ -236,7 +235,7 @@ def test_polars_upath_io_manager_input_optional_lazy_return_none(
 
 
 def test_polars_upath_io_manager_output_optional_lazy(
-    io_manager_and_lazy_df: Tuple[BasePolarsUPathIOManager, pl.LazyFrame],
+    io_manager_and_lazy_df: tuple[BasePolarsUPathIOManager, pl.LazyFrame],
 ):
     manager, df = io_manager_and_lazy_df
 
@@ -254,88 +253,8 @@ def test_polars_upath_io_manager_output_optional_lazy(
     )
 
 
-IO_MANAGERS_SUPPORTING_STORAGE_METADATA = (
-    PolarsParquetIOManager,
-    PolarsDeltaIOManager,
-)
-
-
-def check_skip_storage_metadata_test(io_manager_def: BasePolarsUPathIOManager):
-    if not isinstance(io_manager_def, IO_MANAGERS_SUPPORTING_STORAGE_METADATA):
-        pytest.skip(f"Only {IO_MANAGERS_SUPPORTING_STORAGE_METADATA} support storage metadata")
-
-
-@pytest.fixture
-def metadata() -> StorageMetadata:
-    return {"a": 1, "b": "2", "c": [1, 2, 3], "d": {"e": 1}, "f": [1, 2, 3, {"g": 1}]}
-
-
-def test_upath_io_manager_storage_metadata_lazy(
-    io_manager_and_lazy_df: Tuple[BasePolarsUPathIOManager, pl.LazyFrame], metadata: StorageMetadata
-):
-    io_manager_def, df = io_manager_and_lazy_df
-    check_skip_storage_metadata_test(io_manager_def)
-
-    @asset(io_manager_def=io_manager_def)
-    def upstream() -> Tuple[pl.LazyFrame, StorageMetadata]:
-        return df, metadata
-
-    @asset(io_manager_def=io_manager_def)
-    def downstream(upstream: Tuple[pl.LazyFrame, StorageMetadata]) -> None:
-        loaded_df, upstream_metadata = upstream
-        assert upstream_metadata == metadata
-        pl_testing.assert_frame_equal(loaded_df.collect(), df.collect())
-
-    with pytest.warns(match=DEPRECATED_STORAGE_METADATA_STRING):
-        materialize(
-            [upstream, downstream],
-        )
-
-
-def test_upath_io_manager_storage_metadata_optional_lazy_exists(
-    io_manager_and_lazy_df: Tuple[BasePolarsUPathIOManager, pl.LazyFrame], metadata: StorageMetadata
-):
-    io_manager_def, df = io_manager_and_lazy_df
-    check_skip_storage_metadata_test(io_manager_def)
-
-    @asset(io_manager_def=io_manager_def)
-    def upstream() -> Optional[Tuple[pl.LazyFrame, StorageMetadata]]:
-        return df, metadata
-
-    @asset(io_manager_def=io_manager_def)
-    def downstream(upstream: Optional[Tuple[pl.LazyFrame, StorageMetadata]]) -> None:
-        assert upstream is not None
-        df, upstream_metadata = upstream
-        assert upstream_metadata == metadata
-
-    with pytest.warns(match=DEPRECATED_STORAGE_METADATA_STRING):
-        materialize(
-            [upstream, downstream],
-        )
-
-
-def test_upath_io_manager_storage_metadata_optional_lazy_missing(
-    io_manager_and_lazy_df: Tuple[BasePolarsUPathIOManager, pl.LazyFrame], metadata: StorageMetadata
-):
-    io_manager_def, df = io_manager_and_lazy_df
-    check_skip_storage_metadata_test(io_manager_def)
-
-    @asset(io_manager_def=io_manager_def)
-    def upstream() -> Optional[Tuple[pl.LazyFrame, StorageMetadata]]:
-        return None
-
-    @asset(io_manager_def=io_manager_def)
-    def downstream(upstream: Optional[Tuple[pl.LazyFrame, StorageMetadata]]) -> None:
-        assert upstream is None
-
-    with pytest.warns(match=DEPRECATED_STORAGE_METADATA_STRING):
-        materialize(
-            [upstream, downstream],
-        )
-
-
 def test_upath_io_manager_multi_partitions_definition_load_multiple_partitions(
-    io_manager_and_lazy_df: Tuple[BasePolarsUPathIOManager, pl.LazyFrame],
+    io_manager_and_lazy_df: tuple[BasePolarsUPathIOManager, pl.LazyFrame],
 ):
     io_manager_def, df = io_manager_and_lazy_df
 
@@ -389,7 +308,7 @@ def test_upath_io_manager_multi_partitions_definition_load_multiple_partitions(
 
 
 def test_polars_upath_io_manager_input_dict_optional_lazy(
-    io_manager_and_df: Tuple[BasePolarsUPathIOManager, pl.DataFrame],
+    io_manager_and_df: tuple[BasePolarsUPathIOManager, pl.DataFrame],
 ):
     manager, df = io_manager_and_df
     partition_keys = ["a", "b", "missing"]
@@ -409,7 +328,7 @@ def test_polars_upath_io_manager_input_dict_optional_lazy(
         io_manager_def=manager,
         ins={"upstream": AssetIn(metadata={"allow_missing_partitions": True})},
     )
-    def downstream(upstream: Dict[str, pl.LazyFrame]) -> pl.DataFrame:
+    def downstream(upstream: dict[str, pl.LazyFrame]) -> pl.DataFrame:
         dfs = []
         for df in upstream.values():
             assert isinstance(df, pl.LazyFrame)

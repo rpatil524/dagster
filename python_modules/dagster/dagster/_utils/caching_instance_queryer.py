@@ -1,19 +1,8 @@
 import logging
 from collections import defaultdict
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
-from typing import (
-    TYPE_CHECKING,
-    AbstractSet,
-    Dict,
-    Iterable,
-    Mapping,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-    Union,
-    cast,
-)
+from typing import TYPE_CHECKING, AbstractSet, Optional, Union, cast  # noqa: UP035
 
 import dagster._check as check
 from dagster._core.asset_graph_view.serializable_entity_subset import SerializableEntitySubset
@@ -80,14 +69,14 @@ class CachingInstanceQueryer(DynamicPartitionsStore):
         self._asset_graph = asset_graph
         self._logger = logger or logging.getLogger("dagster")
 
-        self._asset_partitions_cache: Dict[Optional[int], Dict[AssetKey, Set[str]]] = defaultdict(
+        self._asset_partitions_cache: dict[Optional[int], dict[AssetKey, set[str]]] = defaultdict(
             dict
         )
-        self._asset_partition_versions_updated_after_cursor_cache: Dict[
+        self._asset_partition_versions_updated_after_cursor_cache: dict[
             AssetKeyPartitionKey, int
         ] = {}
 
-        self._dynamic_partitions_cache: Dict[str, Sequence[str]] = {}
+        self._dynamic_partitions_cache: dict[str, Sequence[str]] = {}
 
         self._evaluation_time = evaluation_time if evaluation_time else get_current_datetime()
 
@@ -186,14 +175,44 @@ class CachingInstanceQueryer(DynamicPartitionsStore):
             # be launched, and then run B completes before run A. In these cases, the computation
             # below will consider the asset to not be in progress, as the latest planned event
             # will be associated with a completed run.
-            planned_materialization_info = (
-                self.instance.event_log_storage.get_latest_planned_materialization_info(asset_key)
+            asset_record = self.get_asset_record(asset_key)
+            last_materialized_run_id = (
+                asset_record.asset_entry.last_materialization_record.run_id
+                if asset_record and asset_record.asset_entry.last_materialization_record
+                else None
             )
-            if not planned_materialization_info:
+
+            planned_materialization_run_id = None
+            if self.instance.event_log_storage.asset_records_have_last_planned_materialization_storage_id:
+                planned_materialization_run_id = (
+                    asset_record.asset_entry.last_planned_materialization_run_id
+                    if asset_record
+                    else None
+                )
+            else:
+                planned_materialization_info = (
+                    self.instance.event_log_storage.get_latest_planned_materialization_info(
+                        asset_key
+                    )
+                )
+                planned_materialization_run_id = (
+                    planned_materialization_info.run_id if planned_materialization_info else None
+                )
+            if (
+                not planned_materialization_run_id
+                # if the latest materialization happened in the same run as the latest planned materialization,
+                # it's no longer in progress
+                or last_materialized_run_id == planned_materialization_run_id
+            ):
                 value = False
             else:
-                dagster_run = self.instance.get_run_by_id(planned_materialization_info.run_id)
-                value = dagster_run is not None and dagster_run.status in IN_PROGRESS_RUN_STATUSES
+                dagster_run = self.instance.get_run_by_id(planned_materialization_run_id)
+                value = dagster_run is not None and dagster_run.status in [
+                    *IN_PROGRESS_RUN_STATUSES,
+                    # an asset is considered to be "in progress" if there is planned work for it that has not
+                    # yet completed, which is not identical to the "in progress" status of the run
+                    DagsterRunStatus.QUEUED,
+                ]
 
         return SerializableEntitySubset(key=asset_key, value=value)
 
@@ -593,7 +612,7 @@ class CachingInstanceQueryer(DynamicPartitionsStore):
 
     def get_materialized_partitions(
         self, asset_key: AssetKey, before_cursor: Optional[int] = None
-    ) -> Set[str]:
+    ) -> set[str]:
         """Returns a list of the partitions that have been materialized for the given asset key.
 
         Args:
@@ -636,7 +655,7 @@ class CachingInstanceQueryer(DynamicPartitionsStore):
         child_asset_key: AssetKey,
         map_old_time_partitions: bool = True,
         max_child_partitions: Optional[int] = None,
-    ) -> Tuple[AbstractSet[AssetKeyPartitionKey], Optional[int]]:
+    ) -> tuple[AbstractSet[AssetKeyPartitionKey], Optional[int]]:
         """Finds asset partitions of the given child whose parents have been materialized since
         latest_storage_id.
         """
@@ -983,7 +1002,7 @@ class CachingInstanceQueryer(DynamicPartitionsStore):
         """Returns values inside parent_asset_partitions that correspond to asset partitions that
         have been updated since the latest materialization of asset_partition.
         """
-        parent_asset_partitions_by_key: Dict[AssetKey, Set[AssetKeyPartitionKey]] = defaultdict(set)
+        parent_asset_partitions_by_key: dict[AssetKey, set[AssetKeyPartitionKey]] = defaultdict(set)
         for parent in parent_asset_partitions:
             parent_asset_partitions_by_key[parent.asset_key].add(parent)
 

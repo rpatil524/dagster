@@ -5,11 +5,9 @@ sidebar_position: 20
 sidebar_label: Installation
 ---
 
-# Installing Dagster
-
 To follow the steps in this guide, you'll need:
 
-- To install Python 3.8 or higher. **Python 3.11 is recommended**.
+- To install Python 3.9 or higher. **Python 3.12 is recommended**.
 - To install pip, a Python package installer
 
 ## Setting up a virtual environment
@@ -72,4 +70,4 @@ If you encounter any issues during the installation process:
 ## Next steps
 
 - Get up and running with your first Dagster project in the [Quickstart](/getting-started/quickstart)
-- Learn to [create data assets in Dagster](/guides/data-assets)
+- Learn to [create data assets in Dagster](/guides/build/assets/defining-assets)

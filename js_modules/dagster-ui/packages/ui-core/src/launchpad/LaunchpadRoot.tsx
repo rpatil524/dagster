@@ -1,4 +1,5 @@
-import {CodeMirrorInDialogStyle, Dialog, DialogHeader} from '@dagster-io/ui-components';
+import {Dialog, DialogHeader} from '@dagster-io/ui-components';
+import {CodeMirrorInDialogStyle} from '@dagster-io/ui-components/editor';
 import {Redirect, useParams} from 'react-router-dom';
 
 import {LaunchpadAllowedRoot} from './LaunchpadAllowedRoot';
@@ -31,7 +32,7 @@ export const AssetLaunchpad = ({
     <Dialog
       style={{height: '90vh', width: '80%'}}
       isOpen={open}
-      canEscapeKeyClose={true}
+      canEscapeKeyClose={false}
       canOutsideClickClose={true}
       onClose={() => setOpen(false)}
     >

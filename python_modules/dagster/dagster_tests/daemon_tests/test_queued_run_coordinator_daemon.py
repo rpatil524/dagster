@@ -1,7 +1,8 @@
 import datetime
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 import pytest
 from dagster._core.definitions.events import AssetKey
@@ -38,6 +39,10 @@ BAD_USER_CODE_RUN_ID_UUID = make_new_run_id()
 class QueuedRunCoordinatorDaemonTests(ABC):
     @pytest.fixture
     def run_coordinator_config(self):
+        return {}
+
+    @pytest.fixture
+    def concurrency_config(self):
         return {}
 
     @abstractmethod
@@ -613,11 +618,11 @@ class QueuedRunCoordinatorDaemonTests(ABC):
             return original_method(
                 self,
                 origin,
-                host,
+                host,  # pyright: ignore[reportArgumentType]
                 port,
                 socket,
                 server_id,
-                heartbeat,
+                heartbeat,  # pyright: ignore[reportArgumentType]
                 watch_server,
                 grpc_server_registry,
             )
@@ -875,14 +880,14 @@ class QueuedRunCoordinatorDaemonTests(ABC):
         instance.event_log_storage.set_concurrency_slots("foo", 1)
         list(daemon.run_iteration(concurrency_limited_workspace_context))
         assert set(self.get_run_ids(instance.run_launcher.queue())) == set([run_id_1])
-        caplog.text.count("is blocked by global concurrency limits") == 0
+        caplog.text.count("is blocked by global concurrency limits") == 0  # pyright: ignore[reportUnusedExpression]
 
         self.submit_run(
             instance, remote_job, workspace, run_id=run_id_2, asset_selection=set([foo_key])
         )
         list(daemon.run_iteration(concurrency_limited_workspace_context))
         assert set(self.get_run_ids(instance.run_launcher.queue())) == {run_id_1}
-        caplog.text.count(f"Run {run_id_2} is blocked by global concurrency limits") == 1
+        caplog.text.count(f"Run {run_id_2} is blocked by global concurrency limits") == 1  # pyright: ignore[reportUnusedExpression]
 
         self.submit_run(
             instance, remote_job, workspace, run_id=run_id_3, asset_selection=set([foo_key])
@@ -890,15 +895,15 @@ class QueuedRunCoordinatorDaemonTests(ABC):
         list(daemon.run_iteration(concurrency_limited_workspace_context))
         assert set(self.get_run_ids(instance.run_launcher.queue())) == {run_id_1}
         # the log message only shows up once per run
-        caplog.text.count(f"Run {run_id_2} is blocked by global concurrency limits") == 1
-        caplog.text.count(f"Run {run_id_3} is blocked by global concurrency limits") == 1
+        caplog.text.count(f"Run {run_id_2} is blocked by global concurrency limits") == 1  # pyright: ignore[reportUnusedExpression]
+        caplog.text.count(f"Run {run_id_3} is blocked by global concurrency limits") == 1  # pyright: ignore[reportUnusedExpression]
 
         # bumping up the slot by one means that one more run should get dequeued
         instance.event_log_storage.set_concurrency_slots("foo", 2)
         list(daemon.run_iteration(concurrency_limited_workspace_context))
         assert set(self.get_run_ids(instance.run_launcher.queue())) == {run_id_1, run_id_2}
-        caplog.text.count(f"Run {run_id_2} is blocked by global concurrency limits") == 1
-        caplog.text.count(f"Run {run_id_3} is blocked by global concurrency limits") == 1
+        caplog.text.count(f"Run {run_id_2} is blocked by global concurrency limits") == 1  # pyright: ignore[reportUnusedExpression]
+        caplog.text.count(f"Run {run_id_3} is blocked by global concurrency limits") == 1  # pyright: ignore[reportUnusedExpression]
 
     @pytest.mark.parametrize(
         "run_coordinator_config",
@@ -1040,6 +1045,7 @@ class QueuedRunCoordinatorDaemonTests(ABC):
         list(daemon.run_iteration(concurrency_limited_workspace_context))
         assert set(self.get_run_ids(instance.run_launcher.queue())) == set([run_id_1, run_id_2])
 
+    @pytest.mark.parametrize("concurrency_config", [{"default_op_concurrency_limit": 1}])
     @pytest.mark.parametrize(
         "run_coordinator_config",
         [
@@ -1135,6 +1141,7 @@ class QueuedRunCoordinatorDaemonTests(ABC):
         list(daemon.run_iteration(concurrency_limited_workspace_context))
         assert set(self.get_run_ids(instance.run_launcher.queue())) == set()
 
+    @pytest.mark.parametrize("concurrency_config", [{"default_op_concurrency_limit": 1}])
     @pytest.mark.parametrize(
         "run_coordinator_config",
         [
@@ -1167,7 +1174,7 @@ class QueuedRunCoordinatorDaemonTests(ABC):
 
         list(daemon.run_iteration(concurrency_limited_workspace_context))
         assert set(self.get_run_ids(instance.run_launcher.queue())) == set([run_id_1])
-        caplog.text.count("is blocked by global concurrency limits") == 0
+        caplog.text.count("is blocked by global concurrency limits") == 0  # pyright: ignore[reportUnusedExpression]
 
         # the global concurrency counter has initialized the concurrency configuration
         assert "foo" in instance.event_log_storage.get_concurrency_keys()
@@ -1177,16 +1184,73 @@ class QueuedRunCoordinatorDaemonTests(ABC):
         )
         list(daemon.run_iteration(concurrency_limited_workspace_context))
         assert set(self.get_run_ids(instance.run_launcher.queue())) == {run_id_1}
-        caplog.text.count(f"Run {run_id_2} is blocked by global concurrency limits") == 1
+        caplog.text.count(f"Run {run_id_2} is blocked by global concurrency limits") == 1  # pyright: ignore[reportUnusedExpression]
+
+    @pytest.mark.parametrize(
+        "concurrency_config",
+        [
+            {"pools": {"granularity": "run", "default_limit": 1}},
+        ],
+    )
+    @pytest.mark.parametrize(
+        "run_coordinator_config",
+        [
+            {
+                "block_op_concurrency_limited_runs": {
+                    "enabled": True,
+                },
+            },
+        ],
+    )
+    def test_concurrency_run_granularity(
+        self,
+        concurrency_limited_workspace_context,
+        daemon,
+        instance,
+    ):
+        run_id_1, run_id_2 = [make_new_run_id() for _ in range(2)]
+        workspace = concurrency_limited_workspace_context.create_request_context()
+        # concurrency_limited_asset_job
+        remote_job = self.get_concurrency_job(workspace)
+        foo_key = AssetKey(["prefix", "foo_limited_asset"])
+        bar_key = AssetKey(["prefix", "bar_limited_asset"])
+        baz_key = AssetKey(["prefix", "baz_limited_asset"])
+        downstream_baz_key = AssetKey(["prefix", "baz_limited_asset_depends_on_foo"])
+
+        # first submit a run that occupies the baz slot
+        self.submit_run(
+            instance, remote_job, workspace, run_id=run_id_1, asset_selection=set([baz_key])
+        )
+        list(daemon.run_iteration(concurrency_limited_workspace_context))
+        assert set(self.get_run_ids(instance.run_launcher.queue())) == set([run_id_1])
+
+        # submit a run that has 2 root nodes, respectively with foo, bar concurrency groups
+        # also with a downstream extra baz concurrency group asset
+        self.submit_run(
+            instance,
+            remote_job,
+            workspace,
+            run_id=run_id_2,
+            asset_selection=set([foo_key, bar_key, downstream_baz_key]),
+        )
+
+        # even though the root nodes have slots available, the second run is not launched
+        list(daemon.run_iteration(concurrency_limited_workspace_context))
+        assert set(self.get_run_ids(instance.run_launcher.queue())) == set([run_id_1])
+
+        instance.event_log_storage.set_concurrency_slots("baz", 2)
+
+        # all group slots available, run launched, even though there is only one slot open for baz
+        # and the run has two baz-grouped nodes
+        list(daemon.run_iteration(concurrency_limited_workspace_context))
+        assert set(self.get_run_ids(instance.run_launcher.queue())) == set([run_id_1, run_id_2])
 
 
 class TestQueuedRunCoordinatorDaemon(QueuedRunCoordinatorDaemonTests):
     @pytest.fixture
-    def instance(self, run_coordinator_config):
+    def instance(self, run_coordinator_config, concurrency_config):
         overrides = {
-            "concurrency": {
-                "default_op_concurrency_limit": 1,
-            },
+            "concurrency": concurrency_config,
             "run_coordinator": {
                 "module": "dagster._core.run_coordinator",
                 "class": "QueuedRunCoordinator",

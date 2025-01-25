@@ -63,9 +63,13 @@ class CommandStepBuilder:
             "mount-buildkite-agent": True,
         }
 
-    def on_python_image(self, image: str, env: Optional[List[str]] = None) -> "CommandStepBuilder":
+    def on_python_image(
+        self, image: str, env: Optional[List[str]] = None
+    ) -> "CommandStepBuilder":
         settings = self._base_docker_settings()
-        settings["image"] = f"{AWS_ACCOUNT_ID}.dkr.ecr.{AWS_ECR_REGION}.amazonaws.com/{image}"
+        settings["image"] = (
+            f"{AWS_ACCOUNT_ID}.dkr.ecr.{AWS_ECR_REGION}.amazonaws.com/{image}"
+        )
         # Mount the Docker socket so we can run Docker inside of our container
         # Mount /tmp from the host machine to /tmp in our container. This is
         # useful if you need to mount a volume when running a Docker container;
@@ -109,7 +113,7 @@ class CommandStepBuilder:
             raise Exception(f"Unsupported python version for test image: {ver}.")
 
         return self.on_python_image(
-            image=f"buildkite-test:py{ver}-{BUILDKITE_TEST_IMAGE_VERSION}",
+            image=f"buildkite-test:py{ver.value}-{BUILDKITE_TEST_IMAGE_VERSION}",
             env=env,
         )
 

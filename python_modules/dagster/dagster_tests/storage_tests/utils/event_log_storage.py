@@ -5,11 +5,12 @@ import re
 import string
 import sys
 import time
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack, contextmanager
-from typing import List, Optional, Sequence, Tuple, cast
+from typing import Optional, cast
+from unittest import mock
 
-import mock
 import pytest
 import sqlalchemy as db
 from dagster import (
@@ -57,11 +58,14 @@ from dagster._core.definitions.definitions_class import Definitions
 from dagster._core.definitions.dependency import NodeHandle
 from dagster._core.definitions.job_base import InMemoryJob
 from dagster._core.definitions.multi_dimensional_partitions import MultiPartitionKey
-from dagster._core.definitions.partition import PartitionKeyRange, StaticPartitionsDefinition
+from dagster._core.definitions.partition import (
+    AllPartitionsSubset,
+    PartitionKeyRange,
+    StaticPartitionsDefinition,
+)
 from dagster._core.definitions.time_window_partitions import (
     DailyPartitionsDefinition,
     HourlyPartitionsDefinition,
-    PartitionKeysTimeWindowPartitionsSubset,
 )
 from dagster._core.definitions.unresolved_asset_job_definition import define_asset_job
 from dagster._core.errors import DagsterInvalidInvocationError, DagsterInvariantViolationError
@@ -83,6 +87,7 @@ from dagster._core.execution.plan.handle import StepHandle
 from dagster._core.execution.plan.objects import StepFailureData, StepSuccessData
 from dagster._core.execution.stats import StepEventStatus
 from dagster._core.instance import RUNLESS_JOB_NAME, RUNLESS_RUN_ID
+from dagster._core.loader import LoadingContextForTest
 from dagster._core.remote_representation.external_data import PartitionsSnap
 from dagster._core.remote_representation.origin import (
     InProcessCodeLocationOrigin,
@@ -267,8 +272,14 @@ def _default_loggers(event_callback):
 
 # This exists to create synthetic events to test the store
 def _synthesize_events(
-    ops_fn_or_assets, run_id=None, check_success=True, instance=None, run_config=None, tags=None
-) -> Tuple[List[EventLogEntry], JobExecutionResult]:
+    ops_fn_or_assets,
+    run_id=None,
+    check_success=True,
+    instance=None,
+    run_config=None,
+    tags=None,
+    job_name=None,
+) -> tuple[list[EventLogEntry], JobExecutionResult]:
     events = []
 
     def _append_event(event):
@@ -286,6 +297,7 @@ def _synthesize_events(
     else:  # op_fn
 
         @job(
+            name=job_name,
             resource_defs=_default_resources(),
             logger_defs=_default_loggers(_append_event),
             executor_def=in_process_executor,
@@ -333,7 +345,7 @@ def _store_materialization_events(storage, ops_fn, instance, run_id):
     return last_materialization.storage_id + 1
 
 
-def _fetch_all_events(configured_storage, run_id=None) -> Sequence[Tuple[str]]:
+def _fetch_all_events(configured_storage, run_id=None) -> Sequence[tuple[str]]:
     with configured_storage.run_connection(run_id=run_id) as conn:
         res = conn.execute(db.text("SELECT event from event_logs"))
         return res.fetchall()
@@ -493,6 +505,9 @@ class TestEventLogStorage:
     def supports_offset_cursor_queries(self):
         return True
 
+    def supports_get_logs_for_all_runs_by_log_id(self):
+        return True
+
     def supports_multiple_event_type_queries(self):
         return True
 
@@ -571,7 +586,7 @@ class TestEventLogStorage:
                 instance.delete_run(run)
 
     # .watch() is async, there's a small chance they don't run before the asserts
-    @pytest.mark.flaky(reruns=1)
+    @pytest.mark.flaky(max_runs=2)
     def test_event_log_storage_watch(
         self,
         test_run_id: str,
@@ -790,6 +805,16 @@ class TestEventLogStorage:
         assert math.isclose(stats.launch_time, launched_time)
         assert stats.start_time
         assert math.isclose(stats.start_time, start_time)
+
+    def test_event_log_step_stats_retry_with_no_start(
+        self, test_run_id: str, storage: EventLogStorage
+    ):
+        storage.store_event(
+            _event_record(test_run_id, "E", time.time() - 150, DagsterEventType.STEP_UP_FOR_RETRY),
+        )
+        step_stats = storage.get_step_stats_for_run(test_run_id)
+        assert len(step_stats) == 1
+        assert not step_stats[0].status
 
     def test_event_log_step_stats(
         self,
@@ -1072,7 +1097,7 @@ class TestEventLogStorage:
             assert set(map(lambda e: e.run_id, out_events_two)) == {result_two.run_id}
 
     # .watch() is async, there's a small chance they don't run before the asserts
-    @pytest.mark.flaky(reruns=1)
+    @pytest.mark.flaky(max_runs=2)
     def test_event_watcher_single_run_event(self, storage, test_run_id):
         if not self.can_watch():
             pytest.skip("storage cannot watch runs")
@@ -1093,7 +1118,7 @@ class TestEventLogStorage:
         assert all([isinstance(event, EventLogEntry) for event in event_list])
 
     # .watch() is async, there's a small chance they don't run before the asserts
-    @pytest.mark.flaky(reruns=1)
+    @pytest.mark.flaky(max_runs=2)
     def test_event_watcher_filter_run_event(self, instance, storage):
         if not self.can_watch():
             pytest.skip("storage cannot watch runs")
@@ -1122,7 +1147,7 @@ class TestEventLogStorage:
             assert all([isinstance(event, EventLogEntry) for event in event_list])
 
     # .watch() is async, there's a small chance they don't run before the asserts
-    @pytest.mark.flaky(reruns=1)
+    @pytest.mark.flaky(max_runs=2)
     def test_event_watcher_filter_two_runs_event(self, storage, instance):
         if not self.can_watch():
             pytest.skip("storage cannot watch runs")
@@ -1255,7 +1280,9 @@ class TestEventLogStorage:
             )
 
         materializations = [
-            e for e in events if e.dagster_event.event_type == "ASSET_MATERIALIZATION"
+            e
+            for e in events
+            if e.dagster_event.event_type == "ASSET_MATERIALIZATION"  # pyright: ignore[reportOptionalMemberAccess]
         ]
         storage.store_event_batch(materializations)
 
@@ -1299,7 +1326,7 @@ class TestEventLogStorage:
         def _get_counts(result):
             assert isinstance(result, EventRecordsResult)
             return [
-                record.asset_materialization.metadata.get("count").value
+                record.asset_materialization.metadata.get("count").value  # pyright: ignore[reportOptionalMemberAccess]
                 for record in result.records
             ]
 
@@ -1454,7 +1481,8 @@ class TestEventLogStorage:
         def _get_counts(result):
             assert isinstance(result, EventRecordsResult)
             return [
-                record.asset_observation.metadata.get("count").value for record in result.records
+                record.asset_observation.metadata.get("count").value  # pyright: ignore[reportOptionalMemberAccess]
+                for record in result.records
             ]
 
         # results come in descending order, by default
@@ -1575,7 +1603,7 @@ class TestEventLogStorage:
 
     def test_asset_materialization_null_key_fails(self):
         with pytest.raises(check.CheckError):
-            AssetMaterialization(asset_key=None)
+            AssetMaterialization(asset_key=None)  # pyright: ignore[reportArgumentType]
 
     def test_asset_events_error_parsing(self, storage, instance):
         if not isinstance(storage, SqlEventLogStorage):
@@ -2051,6 +2079,61 @@ class TestEventLogStorage:
             )
             assert _get_storage_ids(result) == [storage_id_3, storage_id_1]
 
+    def test_fetch_run_status_monitor_filters(self, storage, instance):
+        if not storage.supports_run_status_change_job_name_filter:
+            # test sqlite in test_get_event_records_sqlite
+            pytest.skip()
+
+        @op
+        def my_op(_):
+            yield Output(1)
+
+        def _ops():
+            my_op()
+
+        def _store_run_events(run_id, job_name=None):
+            events, _ = _synthesize_events(_ops, run_id=run_id, job_name=job_name)
+            for event in events:
+                storage.store_event(event)
+
+        # store events for three runs
+        [run_id_1, run_id_2, run_id_3] = [
+            make_new_run_id(),
+            make_new_run_id(),
+            make_new_run_id(),
+        ]
+
+        with create_and_delete_test_runs(instance, [run_id_1, run_id_2, run_id_3]):
+            _store_run_events(run_id_1, "job_one")
+            _store_run_events(run_id_2, "job_two")
+            _store_run_events(run_id_3, "job_three")
+
+            result = storage.fetch_run_status_changes(
+                DagsterEventType.RUN_SUCCESS,
+                limit=100,
+            )
+            assert [r.event_log_entry.run_id for r in result.records] == [
+                run_id_3,
+                run_id_2,
+                run_id_1,
+            ]
+            result = storage.fetch_run_status_changes(
+                RunStatusChangeRecordsFilter(
+                    DagsterEventType.RUN_SUCCESS,
+                    job_names=["job_one"],
+                ),
+                limit=100,
+            )
+            assert [r.event_log_entry.run_id for r in result.records] == [run_id_1]
+            result = storage.fetch_run_status_changes(
+                RunStatusChangeRecordsFilter(
+                    DagsterEventType.RUN_SUCCESS,
+                    job_names=["job_one", "job_two"],
+                ),
+                limit=100,
+            )
+            assert [r.event_log_entry.run_id for r in result.records] == [run_id_2, run_id_1]
+
     def test_get_event_records_sqlite(self, storage, instance):
         if not self.is_sqlite(storage):
             pytest.skip()
@@ -2189,7 +2272,7 @@ class TestEventLogStorage:
             assert len(run_status_change_events) == 6
 
     # .watch() is async, there's a small chance they don't run before the asserts
-    @pytest.mark.flaky(reruns=1)
+    @pytest.mark.flaky(max_runs=2)
     def test_watch_exc_recovery(self, storage):
         if not self.can_watch():
             pytest.skip("storage cannot watch runs")
@@ -2633,10 +2716,12 @@ class TestEventLogStorage:
         b = AssetKey(["b"])
         run_id = make_new_run_id()
 
-        def _assert_storage_matches(expected):
+        def _assert_storage_matches(expected, partition: Optional[str] = None):
             assert (
                 storage.get_latest_storage_id_by_partition(
-                    a, DagsterEventType.ASSET_MATERIALIZATION
+                    a,
+                    DagsterEventType.ASSET_MATERIALIZATION,
+                    partitions={partition} if partition else None,
                 )
                 == expected
             )
@@ -2677,6 +2762,10 @@ class TestEventLogStorage:
             # p2 materialized
             latest_storage_ids["p2"] = _store_partition_event(a, "p2")
             _assert_storage_matches(latest_storage_ids)
+
+            # check that we can filter for specific partitions
+            _assert_storage_matches({"p1": latest_storage_ids["p1"]}, partition="p1")
+            _assert_storage_matches({"p2": latest_storage_ids["p2"]}, partition="p2")
 
             # unrelated asset materialized
             _store_partition_event(b, "p1")
@@ -3264,16 +3353,11 @@ class TestEventLogStorage:
         run_id_1 = make_new_run_id()
 
         partitions_def = DailyPartitionsDefinition("2023-01-01")
-        partitions_subset = (
-            PartitionsSnap.from_def(partitions_def)
-            .get_partitions_definition()
-            .subset_with_partition_keys(
-                partitions_def.get_partition_keys_in_range(
-                    PartitionKeyRange("2023-01-05", "2023-01-10")
-                )
-            )
+        partitions_subset = AllPartitionsSubset(
+            partitions_def=partitions_def,
+            dynamic_partitions_store=instance,
+            current_time=get_current_datetime(),
         )
-        assert isinstance(partitions_subset, PartitionKeysTimeWindowPartitionsSubset)
 
         with create_and_delete_test_runs(instance, [run_id_1]):
             with pytest.raises(
@@ -4072,8 +4156,8 @@ class TestEventLogStorage:
         assert result.run_id == records[0].asset_entry.last_run_id
 
     def test_get_logs_for_all_runs_by_log_id_of_type(self, storage: EventLogStorage):
-        if not storage.supports_event_consumer_queries():
-            pytest.skip("storage does not support event consumer queries")
+        if not self.supports_get_logs_for_all_runs_by_log_id():
+            pytest.skip("storage does not support get_logs_for_all_runs_by_log_id")
 
         @op
         def return_one(_):
@@ -4094,8 +4178,8 @@ class TestEventLogStorage:
         ) == [DagsterEventType.RUN_SUCCESS, DagsterEventType.RUN_SUCCESS]
 
     def test_get_logs_for_all_runs_by_log_id_by_multi_type(self, storage: EventLogStorage):
-        if not storage.supports_event_consumer_queries():
-            pytest.skip("storage does not support event consumer queries")
+        if not self.supports_get_logs_for_all_runs_by_log_id():
+            pytest.skip("storage does not support get_logs_for_all_runs_by_log_id")
 
         if not self.supports_multiple_event_type_queries():
             pytest.skip("storage does not support deprecated multi-event-type queries")
@@ -4127,8 +4211,8 @@ class TestEventLogStorage:
         ]
 
     def test_get_logs_for_all_runs_by_log_id_cursor(self, storage: EventLogStorage):
-        if not storage.supports_event_consumer_queries():
-            pytest.skip("storage does not support event consumer queries")
+        if not self.supports_get_logs_for_all_runs_by_log_id():
+            pytest.skip("storage does not support get_logs_for_all_runs_by_log_id")
 
         @op
         def return_one(_):
@@ -4164,8 +4248,8 @@ class TestEventLogStorage:
         ]
 
     def test_get_logs_for_all_runs_by_log_id_cursor_multi_type(self, storage: EventLogStorage):
-        if not storage.supports_event_consumer_queries():
-            pytest.skip("storage does not support event consumer queries")
+        if not self.supports_get_logs_for_all_runs_by_log_id():
+            pytest.skip("storage does not support get_logs_for_all_runs_by_log_id")
 
         if not self.supports_multiple_event_type_queries():
             pytest.skip("storage does not support deprecated multi-event-type queries")
@@ -4211,8 +4295,8 @@ class TestEventLogStorage:
         ]
 
     def test_get_logs_for_all_runs_by_log_id_limit(self, storage: EventLogStorage):
-        if not storage.supports_event_consumer_queries():
-            pytest.skip("storage does not support event consumer queries")
+        if not self.supports_get_logs_for_all_runs_by_log_id():
+            pytest.skip("storage does not support get_logs_for_all_runs_by_log_id")
 
         @op
         def return_one(_):
@@ -4244,8 +4328,8 @@ class TestEventLogStorage:
         ]
 
     def test_get_logs_for_all_runs_by_log_id_limit_multi_type(self, storage: EventLogStorage):
-        if not storage.supports_event_consumer_queries():
-            pytest.skip("storage does not support event consumer queries")
+        if not self.supports_get_logs_for_all_runs_by_log_id():
+            pytest.skip("storage does not support get_logs_for_all_runs_by_log_id")
 
         if not self.supports_multiple_event_type_queries():
             pytest.skip("storage does not support deprecated multi-event-type queries")
@@ -4277,9 +4361,6 @@ class TestEventLogStorage:
         ]
 
     def test_get_maximum_record_id(self, storage: EventLogStorage):
-        if not storage.supports_event_consumer_queries():
-            pytest.skip("storage does not support event consumer queries")
-
         storage.wipe()
 
         storage.store_event(
@@ -4290,9 +4371,8 @@ class TestEventLogStorage:
                 run_id=make_new_run_id(),
                 timestamp=time.time(),
                 dagster_event=DagsterEvent(
-                    DagsterEventType.ENGINE_EVENT.value,
-                    "nonce",
-                    event_specific_data=EngineEventData.in_process(999),
+                    DagsterEventType.RUN_SUCCESS.value,
+                    "my_job",
                 ),
             )
         )
@@ -4309,9 +4389,8 @@ class TestEventLogStorage:
                     run_id=make_new_run_id(),
                     timestamp=time.time(),
                     dagster_event=DagsterEvent(
-                        DagsterEventType.ENGINE_EVENT.value,
-                        "nonce",
-                        event_specific_data=EngineEventData.in_process(999),
+                        DagsterEventType.RUN_SUCCESS.value,
+                        "my_job",
                     ),
                 )
             )
@@ -5092,6 +5171,7 @@ class TestEventLogStorage:
         storage.delete_events(run_id=two)
         assert storage.get_concurrency_run_ids() == set()
 
+    @pytest.mark.flaky(max_runs=3)
     def test_threaded_concurrency(self, storage: EventLogStorage):
         if not storage.supports_global_concurrency_limits:
             pytest.skip("storage does not support global op concurrency")
@@ -5113,19 +5193,15 @@ class TestEventLogStorage:
                     time.sleep(0.05)
             storage.free_concurrency_slot_for_step(run_id, key)
 
-        start = time.time()
         with ThreadPoolExecutor() as executor:
-            futures = [executor.submit(_occupy_slot, str(i)) for i in range(100)]
-            while not all(f.done() for f in futures) and time.time() < start + TOTAL_TIMEOUT_TIME:
-                time.sleep(0.1)
-
+            list(
+                executor.map(_occupy_slot, [str(i) for i in range(100)], timeout=TOTAL_TIMEOUT_TIME)
+            )
             foo_info = storage.get_concurrency_info("foo")
             assert foo_info.slot_count == 5
             assert foo_info.active_slot_count == 0
             assert foo_info.pending_step_count == 0
             assert foo_info.assigned_step_count == 0
-
-            assert all(f.done() for f in futures)
 
     def test_zero_concurrency(self, storage: EventLogStorage):
         assert storage
@@ -5184,6 +5260,34 @@ class TestEventLogStorage:
         assert storage.get_concurrency_keys() == set(["foo"])
         assert storage.get_concurrency_info("foo").slot_count == 1
 
+    def test_changing_default_concurrency_key(
+        self, storage: EventLogStorage, instance: DagsterInstance
+    ):
+        assert storage
+        if not storage.supports_global_concurrency_limits:
+            pytest.skip("storage does not support global op concurrency")
+
+        if not self.can_set_concurrency_defaults():
+            pytest.skip("storage does not support setting global op concurrency defaults")
+
+        self.set_default_op_concurrency(instance, storage, 1)
+        assert instance.global_op_concurrency_default_limit == 1
+
+        assert storage.initialize_concurrency_limit_to_default("foo")
+        assert storage.get_concurrency_info("foo").slot_count == 1
+
+        self.set_default_op_concurrency(instance, storage, 2)
+        assert instance.global_op_concurrency_default_limit == 2
+
+        assert storage.initialize_concurrency_limit_to_default("foo")
+        assert storage.get_concurrency_info("foo").slot_count == 2
+
+        self.set_default_op_concurrency(instance, storage, None)
+        assert instance.global_op_concurrency_default_limit is None
+
+        assert storage.initialize_concurrency_limit_to_default("foo")
+        assert storage.get_concurrency_info("foo").slot_count == 0
+
     def test_asset_checks(
         self,
         storage: EventLogStorage,
@@ -5216,6 +5320,19 @@ class TestEventLogStorage:
         assert checks[0].run_id == run_id_1
         assert checks[0].event
         assert checks[0].event.dagster_event_type == DagsterEventType.ASSET_CHECK_EVALUATION_PLANNED
+        checks_filtered = storage.get_asset_check_execution_history(
+            check_key_1, limit=10, status={AssetCheckExecutionRecordStatus.PLANNED}
+        )
+        assert len(checks_filtered) == 1
+        checks_filtered_2 = storage.get_asset_check_execution_history(
+            check_key_1,
+            limit=10,
+            status={
+                AssetCheckExecutionRecordStatus.SUCCEEDED,
+                AssetCheckExecutionRecordStatus.FAILED,
+            },
+        )
+        assert len(checks_filtered_2) == 0
 
         latest_checks = storage.get_latest_asset_check_execution_by_key([check_key_1, check_key_2])
         assert len(latest_checks) == 1
@@ -5255,6 +5372,19 @@ class TestEventLogStorage:
         check_data = checks[0].event.dagster_event.asset_check_evaluation_data
         assert check_data.target_materialization_data
         assert check_data.target_materialization_data.storage_id == 42
+        filtered_checks = storage.get_asset_check_execution_history(
+            check_key_1, limit=10, status={AssetCheckExecutionRecordStatus.SUCCEEDED}
+        )
+        assert len(filtered_checks) == 1
+        filtered_checks_2 = storage.get_asset_check_execution_history(
+            check_key_1,
+            limit=10,
+            status={
+                AssetCheckExecutionRecordStatus.FAILED,
+                AssetCheckExecutionRecordStatus.PLANNED,
+            },
+        )
+        assert len(filtered_checks_2) == 0
 
         latest_checks = storage.get_latest_asset_check_execution_by_key([check_key_1, check_key_2])
         assert len(latest_checks) == 1
@@ -5552,6 +5682,11 @@ class TestEventLogStorage:
                 == AssetCheckExecutionRecordStatus.SUCCEEDED
             )
             assert check_1_summary_record.last_check_execution_record.run_id == run_id_0
+            assert (
+                check_1_summary_record.last_completed_check_execution_record
+                == check_1_summary_record.last_check_execution_record
+            )
+            assert check_1_summary_record.last_completed_run_id == run_id_0
 
             check_2_summary_record = summary_records[check_key_2]
             assert check_2_summary_record.last_check_execution_record
@@ -5619,6 +5754,7 @@ class TestEventLogStorage:
             )
 
             # Check that the summary record for check_key_1 has been updated
+            old_check_1_summary_record = check_1_summary_record
             records = storage.get_asset_check_summary_records(asset_check_keys=[check_key_1])
             assert len(records) == 1
             check_1_summary_record = records[check_key_1]
@@ -5628,6 +5764,12 @@ class TestEventLogStorage:
                 == AssetCheckExecutionRecordStatus.PLANNED
             )
             assert check_1_summary_record.last_check_execution_record.run_id == run_id_1
+            # The latest completed data should not be updated.
+            assert (
+                check_1_summary_record.last_completed_check_execution_record
+                == old_check_1_summary_record.last_check_execution_record
+            )
+            assert check_1_summary_record.last_completed_run_id == run_id_0
 
     def test_large_asset_metadata(
         self,
@@ -6023,7 +6165,9 @@ class TestEventLogStorage:
             AssetKey("static"): StaticPartitionsDefinition(["a", "b", "c"]),
         }
 
-        assert storage.get_asset_status_cache_values(partition_defs_by_key) == [
+        assert storage.get_asset_status_cache_values(
+            partition_defs_by_key.items(), LoadingContextForTest(instance)
+        ) == [
             None,
             None,
             None,
@@ -6038,6 +6182,10 @@ class TestEventLogStorage:
         instance.report_runless_asset_event(AssetMaterialization(asset_key="static", partition="a"))
 
         partition_defs = list(partition_defs_by_key.values())
-        for i, value in enumerate(storage.get_asset_status_cache_values(partition_defs_by_key)):
+        for i, value in enumerate(
+            storage.get_asset_status_cache_values(
+                partition_defs_by_key.items(), LoadingContextForTest(instance)
+            ),
+        ):
             assert value is not None
             assert len(value.deserialize_materialized_partition_subsets(partition_defs[i])) == 1

@@ -1,19 +1,23 @@
 import {
+  Alert,
   Box,
   Colors,
   CursorPaginationControls,
   NonIdealState,
   Spinner,
 } from '@dagster-io/ui-components';
+import {Link} from 'react-router-dom';
 
 import {gql} from '../apollo-client';
 import {BACKFILL_TABLE_FRAGMENT, BackfillTable} from './backfill/BackfillTable';
+import {useBulkActionStatusFilter} from './useBulkActionStatusFilter';
+import {PythonErrorInfo} from '../app/PythonErrorInfo';
+import {useStateWithStorage} from '../hooks/useStateWithStorage';
 import {
   InstanceBackfillsQuery,
   InstanceBackfillsQueryVariables,
 } from './types/InstanceBackfills.types';
 import {PYTHON_ERROR_FRAGMENT} from '../app/PythonErrorFragment';
-import {PythonErrorInfo} from '../app/PythonErrorInfo';
 import {
   FIFTEEN_SECONDS,
   QueryRefreshCountdown,
@@ -26,38 +30,8 @@ import {useQueryPersistedState} from '../hooks/useQueryPersistedState';
 import {DaemonNotRunningAlert, useIsBackfillDaemonHealthy} from '../partitions/BackfillMessaging';
 import {useCursorPaginatedQuery} from '../runs/useCursorPaginatedQuery';
 import {useFilters} from '../ui/BaseFilters';
-import {useStaticSetFilter} from '../ui/BaseFilters/useStaticSetFilter';
 
 const PAGE_SIZE = 10;
-
-const labelForBackfillStatus = (key: BulkActionStatus) => {
-  switch (key) {
-    case BulkActionStatus.CANCELED:
-      return 'Canceled';
-    case BulkActionStatus.CANCELING:
-      return 'Canceling';
-    case BulkActionStatus.COMPLETED:
-      return 'Completed';
-    case BulkActionStatus.FAILED:
-      return 'Failed';
-    case BulkActionStatus.REQUESTED:
-      return 'In progress';
-    case BulkActionStatus.COMPLETED_SUCCESS:
-      return 'Success';
-    case BulkActionStatus.COMPLETED_FAILED:
-      return 'Failed';
-  }
-};
-
-const backfillStatusValues = Object.keys(BulkActionStatus).map((key) => {
-  const status = key as BulkActionStatus;
-  const label = labelForBackfillStatus(status);
-  return {
-    label,
-    value: status,
-    match: [status, label],
-  };
-});
 
 export const InstanceBackfills = () => {
   useTrackPageView();
@@ -67,18 +41,8 @@ export const InstanceBackfills = () => {
     encode: (vals) => ({status: vals.size ? Array.from(vals).join(',') : undefined}),
     decode: (qs) => new Set((qs.status?.split(',') as BulkActionStatus[]) || []),
   });
-  const statusFilter = useStaticSetFilter<BulkActionStatus>({
-    name: 'Status',
-    icon: 'status',
-    allValues: backfillStatusValues,
-    allowMultipleSelections: false,
-    closeOnSelect: true,
-    renderLabel: ({value}) => <div>{labelForBackfillStatus(value)}</div>,
-    getStringValue: (status) => labelForBackfillStatus(status),
-    state: statusState,
-    onStateChanged: setStatusState,
-  });
 
+  const statusFilter = useBulkActionStatusFilter(statusState, setStatusState);
   const {button, activeFiltersJsx} = useFilters({filters: [statusFilter]});
 
   const {queryResult, paginationProps} = useCursorPaginatedQuery<
@@ -103,6 +67,42 @@ export const InstanceBackfills = () => {
   const isDaemonHealthy = useIsBackfillDaemonHealthy();
   const refreshState = useQueryRefreshAtInterval(queryResult, FIFTEEN_SECONDS);
   const {loading, data} = queryResult;
+  const [didDismissBackfillPageAlert, setDidDismissBackfillPageAlert] =
+    useStateWithStorage<boolean>('new_backfill_location_alert_final', (json) => !!json);
+
+  interface AlertProps {
+    setDidDismissBackfillPageAlert: (didDismissBackfillPageAlert: boolean) => void;
+  }
+
+  const BackfillPageDeprecationAlert = (props: AlertProps) => {
+    const {setDidDismissBackfillPageAlert} = props;
+
+    return (
+      <Box padding={8} border="top-and-bottom">
+        <Alert
+          title={
+            <>
+              <span>Backfills are moving:</span>
+              <span style={{fontWeight: 'normal'}}>
+                {' '}
+                We&apos;re moving backfills to the <Link to="/runs?view=backfills">Runs</Link> page
+                to provide a unified view of executions. The Backfills page will be removed in a
+                future release.{' '}
+                <a
+                  href="https://github.com/dagster-io/dagster/discussions/24898"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Share feedback
+                </a>{' '}
+              </span>
+            </>
+          }
+          onClose={() => setDidDismissBackfillPageAlert(true)}
+        />
+      </Box>
+    );
+  };
 
   const content = () => {
     if (loading && !data) {
@@ -167,6 +167,11 @@ export const InstanceBackfills = () => {
 
   return (
     <>
+      {!didDismissBackfillPageAlert ? (
+        <BackfillPageDeprecationAlert
+          setDidDismissBackfillPageAlert={setDidDismissBackfillPageAlert}
+        />
+      ) : null}
       <Box
         padding={{vertical: 12, horizontal: 20}}
         flex={{direction: 'row', alignItems: 'center', justifyContent: 'space-between'}}

@@ -163,7 +163,8 @@ def scope_custom_asset_key_dagster_dbt_translator():
     from pathlib import Path
     from dagster import AssetKey, AssetExecutionContext
     from dagster_dbt import DagsterDbtTranslator, DbtCliResource, DbtProject, dbt_assets
-    from typing import Any, Mapping
+    from typing import Any
+    from collections.abc import Mapping
 
     my_dbt_project = DbtProject(project_dir=Path("path/to/dbt_project"))
 
@@ -244,7 +245,8 @@ def scope_custom_group_name_dagster_dbt_translator():
     from pathlib import Path
     from dagster import AssetExecutionContext
     from dagster_dbt import DagsterDbtTranslator, DbtCliResource, DbtProject, dbt_assets
-    from typing import Any, Mapping, Optional
+    from typing import Any, Optional
+    from collections.abc import Mapping
 
     my_dbt_project = DbtProject(project_dir=Path("path/to/dbt_project"))
 
@@ -269,7 +271,8 @@ def scope_custom_owners_dagster_dbt_translator():
     from pathlib import Path
     from dagster import AssetExecutionContext
     from dagster_dbt import DagsterDbtTranslator, DbtCliResource, DbtProject, dbt_assets
-    from typing import Any, Mapping, Optional, Sequence
+    from typing import Any, Optional
+    from collections.abc import Mapping, Sequence
 
     my_dbt_project = DbtProject(project_dir=Path("path/to/dbt_project"))
 
@@ -295,7 +298,8 @@ def scope_custom_description_dagster_dbt_translator():
     from pathlib import Path
     from dagster import AssetExecutionContext
     from dagster_dbt import DagsterDbtTranslator, DbtCliResource, DbtProject, dbt_assets
-    from typing import Any, Mapping
+    from typing import Any
+    from collections.abc import Mapping
 
     my_dbt_project = DbtProject(project_dir=Path("path/to/dbt_project"))
 
@@ -318,7 +322,8 @@ def scope_custom_metadata_dagster_dbt_translator():
     from pathlib import Path
     from dagster import MetadataValue, AssetExecutionContext
     from dagster_dbt import DagsterDbtTranslator, DbtCliResource, DbtProject, dbt_assets
-    from typing import Any, Mapping
+    from typing import Any
+    from collections.abc import Mapping
 
     my_dbt_project = DbtProject(project_dir=Path("path/to/dbt_project"))
 
@@ -345,7 +350,8 @@ def scope_custom_tags_dagster_dbt_translator():
     from pathlib import Path
     from dagster import AssetExecutionContext
     from dagster_dbt import DagsterDbtTranslator, DbtCliResource, DbtProject, dbt_assets
-    from typing import Any, Mapping
+    from typing import Any
+    from collections.abc import Mapping
 
     my_dbt_project = DbtProject(project_dir=Path("path/to/dbt_project"))
 
@@ -375,7 +381,8 @@ def scope_custom_automation_condition_dagster_dbt_translator():
     from pathlib import Path
     from dagster import AssetExecutionContext, AutomationCondition
     from dagster_dbt import DagsterDbtTranslator, DbtCliResource, DbtProject, dbt_assets
-    from typing import Any, Mapping, Optional
+    from typing import Any, Optional
+    from collections.abc import Mapping
 
     my_dbt_project = DbtProject(project_dir=Path("path/to/dbt_project"))
 
@@ -486,3 +493,30 @@ def scope_build_incremental_model():
         yield from dbt.cli(dbt_build_args, context=context).stream()
 
     # end_build_incremental_model
+
+
+def scope_use_dbt_defer_with_dbt_project(manifest):
+    # start_use_dbt_defer_with_dbt_project
+    import os
+    from pathlib import Path
+
+    from dagster import AssetExecutionContext
+    from dagster_dbt import DbtCliResource, DbtProject, dbt_assets
+
+    my_dbt_project = DbtProject(
+        project_dir=Path(__file__).joinpath("..", "..", "..").resolve(),
+        packaged_project_dir=Path(__file__)
+        .joinpath("..", "..", "dbt-project")
+        .resolve(),
+        state_path=Path("state"),
+    )
+    my_dbt_project.prepare_if_dev()
+
+    @dbt_assets(manifest=my_dbt_project.manifest_path)
+    def my_dbt_assets(
+        context: AssetExecutionContext,
+        dbt: DbtCliResource,
+    ):
+        yield from dbt.cli(["build", *dbt.get_defer_args()], context=context).stream()
+
+    # end_use_dbt_defer_with_dbt_project

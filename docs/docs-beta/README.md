@@ -1,23 +1,44 @@
-# Dagster Docs - Beta
+# Dagster Docs
 
-This is the home of the new Dagster documentation. It is currently in beta and incomplete.
-The documentation site is built using [Docusaurus](https://docusaurus.io/), a modern static website generator.
+This is the home of the Dagster documentation. The documentation site is built using [Docusaurus](https://docusaurus.io/), a modern static website generator.
+
+---
+
+## Overview of the docs
+
+- `./src` contains custom components, styles, themes, and layouts.
+- `./content-templates` contains the templates for the documentation pages.
+- `./docs/` is the source of truth for the documentation.
+- `/examples/docs_beta_snippets/docs_beta_snippets/` contains code examples for the documentation. Some code examples also live in `/examples/` and `/examples/docs_snippets/docs_snippets/`.
+
+The docs are organized into the following sections:
+
+- Docs - includes content from [getting-started](./docs/getting-started/), [etl-pipeline-tutorial](./docs/etl-pipeline-tutorial/), [guides](./docs/guides/), and [about](./docs/about/)
+- [Tutorials](./docs/tutorials/)
+- [Integrations](./docs/integrations/)
+- [Dagster+](./docs/dagster-plus/)
+- [API reference](./docs/api/)
+
+`sidebar.ts` and `docusaurus.config.ts` are the main configuration files for the documentation.
+
+For formatting guidelines, see the [CONTRIBUTING](CONTRIBUTING.md) guide.
 
 ---
 
 ## Installation
 
-The site uses [yarn](https://yarnpkg.com/) for package management.
+The site uses [yarn](https://yarnpkg.com/) for package management. Do not install yarn using `npm`.
+The latest instructions for installing yarn can be found [here](https://yarnpkg.com/getting-started/install).
 
-To install dependencies:
+This is a recommended setup:
 
 ```
+brew upgrade node
+corepack enable
 yarn install
 ```
 
-**Note**: The yarn binary is checked in, so you do not need to install yarn yourself.
-
-It also uses [Vale](https://vale.sh/) to check for issues in the documentation.
+The docs site also uses [Vale](https://vale.sh/) to check for issues in the documentation.
 
 Install Vale with:
 
@@ -33,24 +54,7 @@ pip install vale
 
 ---
 
-## Overview of the docs
-
-- `./src` contains custom components, styles, themes, and layouts.
-- `./content-templates` contains the templates for the documentation pages.
-- `./docs/` is the source of truth for the documentation.
-- `/examples/docs_beta_snippets/docs_beta_snippets/` contains all code examples for the documentation.
-
-The docs are broken down into the following sections:
-
-- [Tutorials](./docs/tutorials/)
-- [Guides](./docs/guides/)
-- [Concepts](./docs/concepts/)
-
-`sidebar.ts` and `docusaurus.config.ts` are the main configuration files for the documentation.
-
----
-
-## Local Development
+## Local development
 
 To start the local development server:
 
@@ -75,37 +79,6 @@ yarn vale /path/to/file      ## check individual file
 yarn vale --no-wrap          ## remove wrapping from output
 ```
 
-### Diagrams
-
-You can use [Mermaid.js](https://mermaid.js.org/syntax/flowchart.html) to create diagrams. For example:
-
-```mermaid
-flowchart LR
-    Start --> Stop
-```
-
-Refer to the [Mermaid.js documentation](https://mermaid.js.org/) for more info.
-
-### Code examples
-
-To include code snippets, use the following format:
-
-```
-<CodeExample filePath="path/to/file.py" />
-```
-
-The `filePath` is relative to the `./examples/docs_beta_snippets/docs_beta_snippets/` directory.
-
-At minimum, all `.py` files in the `docs_beta_snippets` directory are tested by attempting to load the Python files.
-You can write additional tests for them in the `docs_beta_snippets_test` folder. See the folder for more information.
-
-To type-check the code snippets during development, run the following command from the Dagster root folder.
-This will run `pyright` on all new/changed files relative to the master branch.
-
-```
-make quick_pyright
-```
-
 ---
 
 ## Build
@@ -116,13 +89,15 @@ To build the site for production:
 yarn build
 ```
 
-This command generates static content into the `build` directory and can be served using any static contents hosting service. This also checks for any broken links in the documentation.
+This command generates static content into the `build` directory and can be served using any static contents hosting service. This also checks for any broken links in the documentation. Note that you will need to store Algolia credentials in local environment variables to build the site for production.
+
+---
 
 ## Deployment
 
 This site is built and deployed using Vercel.
 
-### API Documentation
+### API documentation
 
 API documentation is built in Vercel by overriding the _Build Command_ to the following:
 
@@ -130,7 +105,9 @@ API documentation is built in Vercel by overriding the _Build Command_ to the fo
 yarn sync-api-docs && yarn build
 ```
 
-This runs the `scripts/vercel-sync-api-docs.sh` script which builds the MDX files using the custom `sphinx-mdx-builder`, and copies the resulting MDX files to `docs/api`.
+This runs the `scripts/vercel-sync-api-docs.sh` script which builds the MDX files using the custom `sphinx-mdx-builder`, and copies the resulting MDX files to `docs/api/python-api`.
+
+---
 
 ## Search
 

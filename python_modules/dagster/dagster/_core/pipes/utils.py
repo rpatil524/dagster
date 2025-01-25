@@ -6,9 +6,10 @@ import tempfile
 import time
 import warnings
 from abc import ABC, abstractmethod
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from threading import Event, Thread
-from typing import IO, Dict, Iterator, Optional, Sequence, Tuple, TypeVar
+from typing import IO, Optional, TypeVar, Union
 
 from dagster_pipes import (
     PIPES_PROTOCOL_VERSION_FIELD,
@@ -25,6 +26,7 @@ from dagster import (
     _check as check,
 )
 from dagster._core.errors import DagsterInvariantViolationError, DagsterPipesExecutionError
+from dagster._core.execution.context.asset_execution_context import AssetExecutionContext
 from dagster._core.pipes.client import PipesContextInjector, PipesLaunchedData, PipesMessageReader
 from dagster._core.pipes.context import (
     PipesMessageHandler,
@@ -133,10 +135,18 @@ class PipesFileMessageReader(PipesMessageReader):
     Args:
         path (str): The path of the file to which messages will be written. The file will be deleted
             on close of the pipes session.
+        include_stdio_in_messages (bool): Whether to include stdout/stderr logs in the messages produced by the message writer in the external process.
+        cleanup_file (bool): Whether to delete the file on close of the pipes session.
     """
 
-    def __init__(self, path: str):
+    def __init__(
+        self, path: str, include_stdio_in_messages: bool = False, cleanup_file: bool = True
+    ):
         self._path = check.str_param(path, "path")
+        self._include_stdio_in_messages = check.bool_param(
+            include_stdio_in_messages, "include_stdio_in_messages"
+        )
+        self._cleanup_file = cleanup_file
 
     def on_launched(self, params: PipesLaunchedData) -> None:
         self.launched_payload = params
@@ -166,12 +176,15 @@ class PipesFileMessageReader(PipesMessageReader):
                 daemon=True,
             )
             thread.start()
-            yield {PipesDefaultMessageWriter.FILE_PATH_KEY: self._path}
+            yield {
+                PipesDefaultMessageWriter.FILE_PATH_KEY: self._path,
+                PipesDefaultMessageWriter.INCLUDE_STDIO_IN_MESSAGES_KEY: self._include_stdio_in_messages,
+            }
         finally:
             is_session_closed.set()
             if thread:
                 thread.join()
-            if os.path.exists(self._path):
+            if os.path.exists(self._path) and self._cleanup_file:
                 os.remove(self._path)
 
     def _reader_thread(self, handler: "PipesMessageHandler", is_resource_complete: Event) -> None:
@@ -193,6 +206,11 @@ class PipesFileMessageReader(PipesMessageReader):
 class PipesTempFileMessageReader(PipesMessageReader):
     """Message reader that reads messages by tailing an automatically-generated temporary file."""
 
+    def __init__(self, include_stdio_in_messages: bool = False):
+        self._include_stdio_in_messages = check.bool_param(
+            include_stdio_in_messages, "include_stdio_in_messages"
+        )
+
     @contextmanager
     def read_messages(
         self,
@@ -210,7 +228,8 @@ class PipesTempFileMessageReader(PipesMessageReader):
         """
         with tempfile.TemporaryDirectory() as tempdir:
             with PipesFileMessageReader(
-                os.path.join(tempdir, _MESSAGE_READER_FILENAME)
+                os.path.join(tempdir, _MESSAGE_READER_FILENAME),
+                include_stdio_in_messages=self._include_stdio_in_messages,
             ).read_messages(handler) as params:
                 yield params
 
@@ -251,7 +270,7 @@ class PipesThreadedMessageReader(PipesMessageReader):
     """
 
     interval: float
-    log_readers: Dict[str, "PipesLogReader"]
+    log_readers: dict[str, "PipesLogReader"]
     opened_payload: Optional[PipesOpenedData]
     launched_payload: Optional[PipesLaunchedData]
 
@@ -342,7 +361,7 @@ class PipesThreadedMessageReader(PipesMessageReader):
     @abstractmethod
     def download_messages(
         self, cursor: Optional[TCursor], params: PipesParams
-    ) -> Optional[Tuple[TCursor, str]]:
+    ) -> Optional[tuple[TCursor, str]]:
         """Download a chunk of messages from the target location.
 
         Args:
@@ -541,7 +560,7 @@ class PipesBlobStoreMessageReader(PipesThreadedMessageReader):
 
     def download_messages(
         self, cursor: Optional[int], params: PipesParams
-    ) -> Optional[Tuple[int, str]]:
+    ) -> Optional[tuple[int, str]]:
         # mapping new interface to the old one
         # the old interface isn't using the cursor parameter, instead, it keeps track of counter in the "counter" attribute
         chunk = self.download_messages_chunk(self.counter, params)
@@ -696,7 +715,7 @@ _FAIL_TO_YIELD_ERROR_MESSAGE = (
 
 @contextmanager
 def open_pipes_session(
-    context: OpExecutionContext,
+    context: Union[OpExecutionContext, AssetExecutionContext],
     context_injector: PipesContextInjector,
     message_reader: PipesMessageReader,
     extras: Optional[PipesExtras] = None,
@@ -716,7 +735,7 @@ def open_pipes_session(
 
 
     Args:
-        context (OpExecutionContext): The context for the current op/asset execution.
+        context (Union[OpExecutionContext, AssetExecutionContext]): The context for the current op/asset execution.
         context_injector (PipesContextInjector): The context injector to use to inject context into the external process.
         message_reader (PipesMessageReader): The message reader to use to read messages from the external process.
         extras (Optional[PipesExtras]): Optional extras to pass to the external process via the injected context.
@@ -732,7 +751,7 @@ def open_pipes_session(
         extras = {"foo": "bar"}
 
         @asset
-        def ext_asset(context: OpExecutionContext):
+        def ext_asset(context: AssetExecutionContext):
             with open_pipes_session(
                 context=context,
                 extras={"foo": "bar"},
@@ -755,9 +774,10 @@ def open_pipes_session(
     context_data = build_external_execution_context_data(context, extras)
     message_handler = PipesMessageHandler(context, message_reader)
     try:
-        with context_injector.inject_context(
-            context_data
-        ) as ci_params, message_handler.handle_messages() as mr_params:
+        with (
+            context_injector.inject_context(context_data) as ci_params,
+            message_handler.handle_messages() as mr_params,
+        ):
             yield PipesSession(
                 context_data=context_data,
                 message_handler=message_handler,

@@ -15,8 +15,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
 parts/
 sdist/
 var/
@@ -177,3 +175,6 @@ scripts/.build
 
 # dbt .user files
 .user.yml
+
+# exponent config
+exponent.txt

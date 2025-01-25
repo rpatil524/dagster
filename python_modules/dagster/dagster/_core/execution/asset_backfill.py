@@ -1,34 +1,21 @@
 import json
 import logging
 import os
+import sys
 import time
 from collections import defaultdict
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
 from enum import Enum
-from typing import (
-    TYPE_CHECKING,
-    AbstractSet,
-    Dict,
-    Iterable,
-    List,
-    Mapping,
-    NamedTuple,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-    Union,
-    cast,
-)
+from typing import TYPE_CHECKING, AbstractSet, NamedTuple, Optional, Union, cast  # noqa: UP035
 
 import dagster._check as check
 from dagster._core.definitions.asset_graph_subset import AssetGraphSubset
 from dagster._core.definitions.asset_selection import KeysAssetSelection
 from dagster._core.definitions.automation_tick_evaluation_context import (
-    build_run_requests_from_asset_partitions,
     build_run_requests_with_backfill_policies,
 )
-from dagster._core.definitions.base_asset_graph import BaseAssetGraph
+from dagster._core.definitions.base_asset_graph import BaseAssetGraph, BaseAssetNode
 from dagster._core.definitions.events import AssetKey, AssetKeyPartitionKey
 from dagster._core.definitions.partition import PartitionsDefinition, PartitionsSubset
 from dagster._core.definitions.partition_key_range import PartitionKeyRange
@@ -38,7 +25,6 @@ from dagster._core.definitions.run_request import RunRequest
 from dagster._core.definitions.selector import PartitionsByAssetSelector
 from dagster._core.definitions.time_window_partition_mapping import TimeWindowPartitionMapping
 from dagster._core.definitions.time_window_partitions import (
-    BaseTimeWindowPartitionsSubset,
     TimeWindowPartitionsDefinition,
     TimeWindowPartitionsSubset,
 )
@@ -52,19 +38,15 @@ from dagster._core.errors import (
 from dagster._core.event_api import AssetRecordsFilter
 from dagster._core.execution.submit_asset_runs import submit_asset_run
 from dagster._core.instance import DagsterInstance, DynamicPartitionsStore
-from dagster._core.storage.dagster_run import (
-    CANCELABLE_RUN_STATUSES,
-    IN_PROGRESS_RUN_STATUSES,
-    DagsterRunStatus,
-    RunsFilter,
-)
+from dagster._core.storage.dagster_run import NOT_FINISHED_STATUSES, DagsterRunStatus, RunsFilter
 from dagster._core.storage.tags import (
     ASSET_PARTITION_RANGE_END_TAG,
     ASSET_PARTITION_RANGE_START_TAG,
     BACKFILL_ID_TAG,
     PARTITION_NAME_TAG,
+    WILL_RETRY_TAG,
 )
-from dagster._core.utils import make_new_run_id
+from dagster._core.utils import make_new_run_id, toposort
 from dagster._core.workspace.context import BaseWorkspaceRequestContext, IWorkspaceProcessContext
 from dagster._serdes import whitelist_for_serdes
 from dagster._time import datetime_from_timestamp, get_current_timestamp
@@ -79,8 +61,6 @@ def get_asset_backfill_run_chunk_size():
 
 
 MATERIALIZATION_CHUNK_SIZE = 1000
-
-MAX_RUNS_CANCELED_PER_ITERATION = 50
 
 
 class AssetBackfillStatus(Enum):
@@ -105,7 +85,7 @@ class PartitionedAssetBackfillStatus(
         num_targeted_partitions: int,
         partitions_counts_by_status: Mapping[AssetBackfillStatus, int],
     ):
-        return super(PartitionedAssetBackfillStatus, cls).__new__(
+        return super().__new__(
             cls,
             check.inst_param(asset_key, "asset_key", AssetKey),
             check.int_param(num_targeted_partitions, "num_targeted_partitions"),
@@ -125,7 +105,7 @@ class UnpartitionedAssetBackfillStatus(
     )
 ):
     def __new__(cls, asset_key: AssetKey, asset_backfill_status: Optional[AssetBackfillStatus]):
-        return super(UnpartitionedAssetBackfillStatus, cls).__new__(
+        return super().__new__(
             cls,
             check.inst_param(asset_key, "asset_key", AssetKey),
             check.opt_inst_param(
@@ -167,11 +147,12 @@ class AssetBackfillData(NamedTuple):
     def with_requested_runs_for_target_roots(self, requested_runs_for_target_roots: bool):
         return self._replace(requested_runs_for_target_roots=requested_runs_for_target_roots)
 
-    def is_complete(self) -> bool:
+    def all_targeted_partitions_have_materialization_status(self) -> bool:
         """The asset backfill is complete when all runs to be requested have finished (success,
         failure, or cancellation). Since the AssetBackfillData object stores materialization states
-        per asset partition, the daemon continues to update the backfill data until all runs have
-        finished in order to display the final partition statuses in the UI.
+        per asset partition, we can use the materialization states and whether any runs for the backfill are
+        not finished to determine if the backfill is complete. We want the daemon to continue to update
+        the backfill data until all runs have finished in order to display the final partition statuses in the UI.
         """
         return (
             (
@@ -298,7 +279,7 @@ class AssetBackfillData(NamedTuple):
 
         root_partitioned_asset_keys = (
             KeysAssetSelection(selected_keys=list(target_partitioned_asset_keys))
-            .sources()
+            .roots()
             .resolve(asset_graph)
         )
 
@@ -331,7 +312,13 @@ class AssetBackfillData(NamedTuple):
 
         Orders keys in the same topological level alphabetically.
         """
-        return [k for k in asset_graph.toposorted_asset_keys if k in self.target_subset.asset_keys]
+        nodes: list[BaseAssetNode] = [asset_graph.get(key) for key in self.target_subset.asset_keys]
+        return [
+            item
+            for items_by_level in toposort({node.key: node.parent_keys for node in nodes})
+            for item in sorted(items_by_level)
+            if item in self.target_subset.asset_keys
+        ]
 
     def get_backfill_status_per_asset_key(
         self, asset_graph: BaseAssetGraph
@@ -438,7 +425,10 @@ class AssetBackfillData(NamedTuple):
 
     @classmethod
     def from_serialized(
-        cls, serialized: str, asset_graph: BaseAssetGraph, backfill_start_timestamp: float
+        cls,
+        serialized: str,
+        asset_graph: BaseAssetGraph,
+        backfill_start_timestamp: float,
     ) -> "AssetBackfillData":
         storage_dict = json.loads(serialized)
 
@@ -587,22 +577,28 @@ class AssetBackfillData(NamedTuple):
         return cls.empty(asset_graph_subset, backfill_start_timestamp, dynamic_partitions_store)
 
     def serialize(
-        self, dynamic_partitions_store: DynamicPartitionsStore, asset_graph: BaseAssetGraph
+        self,
+        dynamic_partitions_store: DynamicPartitionsStore,
+        asset_graph: BaseAssetGraph,
     ) -> str:
         storage_dict = {
             "requested_runs_for_target_roots": self.requested_runs_for_target_roots,
             "serialized_target_subset": self.target_subset.to_storage_dict(
-                dynamic_partitions_store=dynamic_partitions_store, asset_graph=asset_graph
+                dynamic_partitions_store=dynamic_partitions_store,
+                asset_graph=asset_graph,
             ),
             "latest_storage_id": self.latest_storage_id,
             "serialized_requested_subset": self.requested_subset.to_storage_dict(
-                dynamic_partitions_store=dynamic_partitions_store, asset_graph=asset_graph
+                dynamic_partitions_store=dynamic_partitions_store,
+                asset_graph=asset_graph,
             ),
             "serialized_materialized_subset": self.materialized_subset.to_storage_dict(
-                dynamic_partitions_store=dynamic_partitions_store, asset_graph=asset_graph
+                dynamic_partitions_store=dynamic_partitions_store,
+                asset_graph=asset_graph,
             ),
             "serialized_failed_subset": self.failed_and_downstream_subset.to_storage_dict(
-                dynamic_partitions_store=dynamic_partitions_store, asset_graph=asset_graph
+                dynamic_partitions_store=dynamic_partitions_store,
+                asset_graph=asset_graph,
             ),
         }
         return json.dumps(storage_dict)
@@ -725,6 +721,7 @@ def _submit_runs_and_update_backfill_in_chunks(
     instance_queryer: CachingInstanceQueryer,
 ) -> Iterable[None]:
     from dagster._core.execution.backfill import BulkActionStatus
+    from dagster._daemon.utils import DaemonErrorCapture
 
     run_requests = asset_backfill_iteration_result.run_requests
 
@@ -762,8 +759,10 @@ def _submit_runs_and_update_backfill_in_chunks(
                 logger,
             )
         except Exception:
-            logger.exception(
-                "Error while submitting run - updating the backfill data before re-raising"
+            DaemonErrorCapture.process_exception(
+                sys.exc_info(),
+                logger=logger,
+                log_message="Error while submitting run - updating the backfill data before re-raising",
             )
             # Write the runs that we submitted before hitting an error
             _write_updated_backfill_data(
@@ -817,7 +816,7 @@ def _check_target_partitions_subset_is_valid(
     """Checks for any partitions definition changes since backfill launch that should mark
     the backfill as failed.
     """
-    if asset_key not in asset_graph.all_asset_keys:
+    if not asset_graph.has(asset_key):
         raise DagsterDefinitionChangedDeserializationError(
             f"Asset {asset_key} existed at storage-time, but no longer does"
         )
@@ -911,6 +910,71 @@ def _check_validity_and_deserialize_asset_backfill_data(
             raise DagsterAssetBackfillDataLoadError(f"{ex}. {unloadable_locations_error}")
 
     return asset_backfill_data
+
+
+def backfill_is_complete(
+    backfill_id: str,
+    backfill_data: AssetBackfillData,
+    instance: DagsterInstance,
+    logger: logging.Logger,
+):
+    """A backfill is complete when:
+    1. all asset partitions in the target subset have a materialization state (successful, failed, downstream of a failed partition).
+    2. there are no in progress runs for the backfill.
+    3. there are no failed runs that will result in an automatic retry, but have not yet been retried.
+
+    Condition 1 ensures that for each asset partition we have attempted to materialize it or have determined we
+    cannot materialize it because of a failed dependency. Condition 2 ensures that no retries of failed runs are
+    in progress. Condition 3 guards against a race condition where a failed run could be automatically retried
+    but it was not added into the queue in time to be caught by condition 2.
+
+    Since the AssetBackfillData object stores materialization states per asset partition, we want to ensure the
+    daemon continues to update the backfill data until all runs have finished in order to display the
+    final partition statuses in the UI.
+    """
+    # Condition 1 - if any asset partitions in the target subset do not have a materialization state, the backfill
+    # is not complete
+    if not backfill_data.all_targeted_partitions_have_materialization_status():
+        logger.info(
+            "Not all targeted asset partitions have a materialization status. Backfill is still in progress."
+        )
+        return False
+    # Condition 2 - if there are in progress runs for the backfill, the backfill is not complete
+    if (
+        len(
+            instance.get_run_ids(
+                filters=RunsFilter(
+                    statuses=NOT_FINISHED_STATUSES,
+                    tags={BACKFILL_ID_TAG: backfill_id},
+                ),
+                limit=1,
+            )
+        )
+        > 0
+    ):
+        logger.info("Backfill has in progress runs. Backfill is still in progress.")
+        return False
+    # Condition 3 - if there are runs that will be retried, but have not yet been retried, the backfill is not complete
+    runs_waiting_to_retry = [
+        run.run_id
+        for run in instance.get_runs(
+            filters=RunsFilter(
+                tags={BACKFILL_ID_TAG: backfill_id, WILL_RETRY_TAG: "true"},
+                statuses=[DagsterRunStatus.FAILURE],
+            )
+        )
+        if run.is_complete_and_waiting_to_retry
+    ]
+    if len(runs_waiting_to_retry) > 0:
+        num_runs_to_log = 20
+        formatted_runs = "\n".join(runs_waiting_to_retry[:num_runs_to_log])
+        if len(runs_waiting_to_retry) > num_runs_to_log:
+            formatted_runs += f"\n... {len(runs_waiting_to_retry) - num_runs_to_log} more"
+        logger.info(
+            f"The following runs for the backfill will be retried, but retries have not been launched. Backfill is still in progress:\n{formatted_runs}"
+        )
+        return False
+    return True
 
 
 def execute_asset_backfill_iteration(
@@ -1031,11 +1095,12 @@ def execute_asset_backfill_iteration(
 
         updated_backfill_data = updated_backfill.get_asset_backfill_data(asset_graph)
 
-        if updated_backfill_data.is_complete():
-            # The asset backfill is complete when all runs to be requested have finished (success,
-            # failure, or cancellation). Since the AssetBackfillData object stores materialization states
-            # per asset partition, the daemon continues to update the backfill data until all runs have
-            # finished in order to display the final partition statuses in the UI.
+        if backfill_is_complete(
+            backfill_id=backfill.backfill_id,
+            backfill_data=updated_backfill_data,
+            instance=instance,
+            logger=logger,
+        ):
             if (
                 updated_backfill_data.failed_and_downstream_subset.num_partitions_and_non_partitioned_assets
                 > 0
@@ -1045,6 +1110,8 @@ def execute_asset_backfill_iteration(
                 updated_backfill: PartitionBackfill = updated_backfill.with_status(
                     BulkActionStatus.COMPLETED_SUCCESS
                 )
+
+            updated_backfill = updated_backfill.with_end_timestamp(get_current_timestamp())
             instance.update_backfill(updated_backfill)
 
         new_materialized_partitions = (
@@ -1083,43 +1150,17 @@ def execute_asset_backfill_iteration(
         )
 
     elif backfill.status == BulkActionStatus.CANCELING:
-        if not instance.run_coordinator:
-            check.failed("The instance must have a run coordinator in order to cancel runs")
+        from dagster._core.execution.backfill import cancel_backfill_runs_and_cancellation_complete
 
-        # Query for cancelable runs, enforcing a limit on the number of runs to cancel in an iteration
-        # as canceling runs incurs cost
-        runs_to_cancel_in_iteration = instance.run_storage.get_run_ids(
-            filters=RunsFilter(
-                statuses=CANCELABLE_RUN_STATUSES,
-                tags={
-                    BACKFILL_ID_TAG: backfill.backfill_id,
-                },
-            ),
-            limit=MAX_RUNS_CANCELED_PER_ITERATION,
-        )
+        for all_runs_canceled in cancel_backfill_runs_and_cancellation_complete(
+            instance=instance, backfill_id=backfill.backfill_id
+        ):
+            yield None
 
-        yield None
-
-        waiting_for_runs_to_finish_after_cancelation = False
-        if runs_to_cancel_in_iteration:
-            for run_id in runs_to_cancel_in_iteration:
-                instance.run_coordinator.cancel_run(run_id)
-                yield None
-        else:
-            # Check at the beginning of the tick whether there are any runs that we are still
-            # waiting to move into a terminal state. If there are none and the backfill data is
-            # still missing partitions at the end of the tick, that indicates a framework problem.
-            # (It's important that we check for these runs before updating the backfill data -
-            # if we did them in the reverse order, a run that finishes between the two checks
-            # might not be incorporated into the backfill data, causing us to incorrectly decide
-            # there was a framework error.
-            run_waiting_to_cancel = instance.get_run_ids(
-                RunsFilter(
-                    tags={BACKFILL_ID_TAG: backfill.backfill_id}, statuses=IN_PROGRESS_RUN_STATUSES
-                ),
-                limit=1,
+        if not isinstance(all_runs_canceled, bool):
+            check.failed(
+                "Expected cancel_backfill_runs_and_cancellation_complete to return a boolean"
             )
-            waiting_for_runs_to_finish_after_cancelation = len(run_waiting_to_cancel) > 0
 
         # Update the asset backfill data to contain the newly materialized/failed partitions.
         updated_asset_backfill_data = None
@@ -1152,15 +1193,13 @@ def execute_asset_backfill_iteration(
             updated_asset_backfill_data.all_requested_partitions_marked_as_materialized_or_failed()
         )
         if all_partitions_marked_completed:
-            updated_backfill = updated_backfill.with_status(BulkActionStatus.CANCELED)
+            updated_backfill = updated_backfill.with_status(
+                BulkActionStatus.CANCELED
+            ).with_end_timestamp(get_current_timestamp())
 
         instance.update_backfill(updated_backfill)
 
-        if (
-            len(runs_to_cancel_in_iteration) == 0
-            and not all_partitions_marked_completed
-            and not waiting_for_runs_to_finish_after_cancelation
-        ):
+        if all_runs_canceled and not all_partitions_marked_completed:
             check.failed(
                 "All runs have completed, but not all requested partitions have been marked as materialized or failed. "
                 "This is likely a system error. Please report this issue to the Dagster team."
@@ -1202,15 +1241,29 @@ def get_canceling_asset_backfill_iteration_data(
         )
 
     failed_subset = AssetGraphSubset.from_asset_partition_set(
-        set(_get_failed_asset_partitions(instance_queryer, backfill_id, asset_graph)), asset_graph
+        set(
+            _get_failed_asset_partitions(
+                instance_queryer,
+                backfill_id,
+                asset_graph,
+                materialized_subset=updated_materialized_subset,
+            )
+        ),
+        asset_graph,
     )
+    # we fetch the failed_subset to get any new assets that have failed and add that to the set of
+    # assets we already know failed and their downstreams. However we need to remove any assets in
+    # updated_materialized_subset to account for the case where a run retry successfully
+    # materialized a previously failed asset.
+    updated_failed_subset = (
+        asset_backfill_data.failed_and_downstream_subset | failed_subset
+    ) - updated_materialized_subset
     updated_backfill_data = AssetBackfillData(
         target_subset=asset_backfill_data.target_subset,
         latest_storage_id=asset_backfill_data.latest_storage_id,
         requested_runs_for_target_roots=asset_backfill_data.requested_runs_for_target_roots,
         materialized_subset=updated_materialized_subset,
-        failed_and_downstream_subset=asset_backfill_data.failed_and_downstream_subset
-        | failed_subset,
+        failed_and_downstream_subset=updated_failed_subset,
         requested_subset=asset_backfill_data.requested_subset,
         backfill_start_time=TimestampWithTimezone(backfill_start_timestamp, "UTC"),
     )
@@ -1273,6 +1326,7 @@ def _get_failed_and_downstream_asset_partitions(
     asset_graph: RemoteWorkspaceAssetGraph,
     instance_queryer: CachingInstanceQueryer,
     backfill_start_timestamp: float,
+    materialized_subset: AssetGraphSubset,
 ) -> AssetGraphSubset:
     failed_and_downstream_subset = AssetGraphSubset.from_asset_partition_set(
         asset_graph.bfs_filter_asset_partitions(
@@ -1284,7 +1338,9 @@ def _get_failed_and_downstream_asset_partitions(
                 ),
                 "",
             ),
-            _get_failed_asset_partitions(instance_queryer, backfill_id, asset_graph),
+            _get_failed_asset_partitions(
+                instance_queryer, backfill_id, asset_graph, materialized_subset
+            ),
             evaluation_time=datetime_from_timestamp(backfill_start_timestamp),
         )[0],
         asset_graph,
@@ -1310,7 +1366,7 @@ def _partition_subset_str(
     partition_subset: PartitionsSubset,
     partitions_def: PartitionsDefinition,
 ):
-    if isinstance(partition_subset, BaseTimeWindowPartitionsSubset) and isinstance(
+    if isinstance(partition_subset, TimeWindowPartitionsSubset) and isinstance(
         partitions_def, TimeWindowPartitionsDefinition
     ):
         return ", ".join(
@@ -1354,7 +1410,7 @@ def execute_asset_backfill_iteration_inner(
     This is a generator so that we can return control to the daemon and let it heartbeat during
     expensive operations.
     """
-    initial_candidates: Set[AssetKeyPartitionKey] = set()
+    initial_candidates: set[AssetKeyPartitionKey] = set()
     request_roots = not asset_backfill_data.requested_runs_for_target_roots
     if request_roots:
         logger.info(
@@ -1420,6 +1476,7 @@ def execute_asset_backfill_iteration_inner(
             asset_graph,
             instance_queryer,
             backfill_start_timestamp,
+            updated_materialized_subset,
         )
 
         yield None
@@ -1470,37 +1527,11 @@ def execute_asset_backfill_iteration_inner(
             f"The following assets were considered for materialization but not requested:\n\n{not_requested_str}"
         )
 
-    # check if all assets have backfill policies if any of them do, otherwise, raise error
-    asset_backfill_policies = [
-        asset_graph.get(asset_key).backfill_policy
-        for asset_key in {
-            asset_partition.asset_key for asset_partition in asset_partitions_to_request
-        }
-    ]
-    all_assets_have_backfill_policies = all(
-        backfill_policy is not None for backfill_policy in asset_backfill_policies
+    run_requests = build_run_requests_with_backfill_policies(
+        asset_partitions=asset_partitions_to_request,
+        asset_graph=asset_graph,
+        dynamic_partitions_store=instance_queryer,
     )
-    if all_assets_have_backfill_policies:
-        run_requests = build_run_requests_with_backfill_policies(
-            asset_partitions=asset_partitions_to_request,
-            asset_graph=asset_graph,
-            dynamic_partitions_store=instance_queryer,
-        )
-    else:
-        if not all(backfill_policy is None for backfill_policy in asset_backfill_policies):
-            # if some assets have backfill policies, but not all of them, raise error
-            raise DagsterBackfillFailedError(
-                "Either all assets must have backfill policies or none of them must have backfill"
-                " policies. To backfill these assets together, either add backfill policies to all"
-                " assets, or remove backfill policies from all assets."
-            )
-        # When any of the assets do not have backfill policies, we fall back to the default behavior of
-        # backfilling them partition by partition.
-        run_requests = build_run_requests_from_asset_partitions(
-            asset_partitions=asset_partitions_to_request,
-            asset_graph=asset_graph,
-            run_tags={},
-        )
 
     if request_roots:
         check.invariant(
@@ -1532,7 +1563,7 @@ def can_run_with_parent(
     asset_graph: RemoteWorkspaceAssetGraph,
     target_subset: AssetGraphSubset,
     asset_partitions_to_request_map: Mapping[AssetKey, AbstractSet[Optional[str]]],
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Returns if a given candidate can be materialized in the same run as a given parent on
     this tick, and the reason it cannot be materialized, if applicable.
     """
@@ -1542,13 +1573,14 @@ def can_run_with_parent(
         candidate.asset_key, parent_asset_key=parent.asset_key
     )
 
+    is_self_dependency = parent.asset_key == candidate.asset_key
+
     parent_node = asset_graph.get(parent.asset_key)
     candidate_node = asset_graph.get(candidate.asset_key)
     # checks if there is a simple partition mapping between the parent and the child
     has_identity_partition_mapping = (
         # both unpartitioned
-        not candidate_node.is_partitioned
-        and not parent_node.is_partitioned
+        (not candidate_node.is_partitioned and not parent_node.is_partitioned)
         # normal identity partition mapping
         or isinstance(partition_mapping, IdentityPartitionMapping)
         # for assets with the same time partitions definition, a non-offset partition
@@ -1603,8 +1635,11 @@ def can_run_with_parent(
                 or parent_node.backfill_policy.max_partitions_per_run
                 > len(asset_partitions_to_request_map[parent.asset_key])
             )
-            # all targeted parents are being requested this tick
-            and len(asset_partitions_to_request_map[parent.asset_key]) == parent_target_subset.size
+            # all targeted parents are being requested this tick, or its a self dependency
+            and (
+                len(asset_partitions_to_request_map[parent.asset_key]) == parent_target_subset.size
+                or is_self_dependency
+            )
         )
     ):
         return True, ""
@@ -1629,7 +1664,7 @@ def should_backfill_atomic_asset_partitions_unit(
     failed_and_downstream_subset: AssetGraphSubset,
     dynamic_partitions_store: DynamicPartitionsStore,
     current_time: datetime,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Args:
     candidates_unit: A set of asset partitions that must all be materialized if any is
         materialized.
@@ -1640,16 +1675,25 @@ def should_backfill_atomic_asset_partitions_unit(
     for candidate in candidates_unit:
         candidate_asset_partition_string = f"Asset {candidate.asset_key.to_user_string()} {f'with partition {candidate.partition_key}' if candidate.partition_key is not None else ''}"
         if candidate not in target_subset:
-            return False, f"{candidate_asset_partition_string} is not targeted by backfill"
+            return (
+                False,
+                f"{candidate_asset_partition_string} is not targeted by backfill",
+            )
         elif candidate in failed_and_downstream_subset:
             return (
                 False,
                 f"{candidate_asset_partition_string} has failed or is downstream of a failed asset",
             )
         elif candidate in materialized_subset:
-            return False, f"{candidate_asset_partition_string} was already materialized by backfill"
+            return (
+                False,
+                f"{candidate_asset_partition_string} was already materialized by backfill",
+            )
         elif candidate in requested_subset:
-            return False, f"{candidate_asset_partition_string} was already requested by backfill"
+            return (
+                False,
+                f"{candidate_asset_partition_string} was already requested by backfill",
+            )
 
         parent_partitions_result = asset_graph.get_parents_partitions(
             dynamic_partitions_store, current_time, *candidate
@@ -1661,7 +1705,7 @@ def should_backfill_atomic_asset_partitions_unit(
                 f" {parent_partitions_result.required_but_nonexistent_parents_partitions}"
             )
 
-        asset_partitions_to_request_map: Dict[AssetKey, Set[Optional[str]]] = defaultdict(set)
+        asset_partitions_to_request_map: dict[AssetKey, set[Optional[str]]] = defaultdict(set)
         for asset_partition in asset_partitions_to_request:
             asset_partitions_to_request_map[asset_partition.asset_key].add(
                 asset_partition.partition_key
@@ -1684,10 +1728,19 @@ def should_backfill_atomic_asset_partitions_unit(
 
 
 def _get_failed_asset_partitions(
-    instance_queryer: CachingInstanceQueryer, backfill_id: str, asset_graph: RemoteAssetGraph
+    instance_queryer: CachingInstanceQueryer,
+    backfill_id: str,
+    asset_graph: RemoteAssetGraph,
+    materialized_subset: AssetGraphSubset,
 ) -> Sequence[AssetKeyPartitionKey]:
-    """Returns asset partitions that materializations were requested for as part of the backfill, but
-    will not be materialized.
+    """Returns asset partitions that materializations were requested for as part of the backfill, but were
+    not successfully materialized.
+
+    This function gets a list of all runs for the backfill that have failed and extracts the asset partitions
+    that were not materialized from those runs. However, we need to account for retried runs. If a run was
+    successfully retried, the original failed run will still be processed in this function. So we check the
+    failed asset partitions against the list of successfully materialized asset partitions. If an asset partition
+    is in the materialized_subset, it means the failed run was retried and the asset partition was materialized.
 
     Includes canceled asset partitions. Implementation assumes that successful runs won't have any
     failed partitions.
@@ -1699,7 +1752,7 @@ def _get_failed_asset_partitions(
         )
     )
 
-    result: List[AssetKeyPartitionKey] = []
+    result: list[AssetKeyPartitionKey] = []
 
     for run in runs:
         planned_asset_keys = instance_queryer.get_planned_materializations_for_run(
@@ -1720,8 +1773,9 @@ def _get_failed_asset_partitions(
                 start=run.tags[ASSET_PARTITION_RANGE_START_TAG],
                 end=run.tags[ASSET_PARTITION_RANGE_END_TAG],
             )
+            asset_partition_candidates = []
             for asset_key in failed_asset_keys:
-                result.extend(
+                asset_partition_candidates.extend(
                     asset_graph.get_partitions_in_range(
                         asset_key, partition_range, instance_queryer
                     )
@@ -1729,8 +1783,15 @@ def _get_failed_asset_partitions(
         else:
             # a regular backfill run that run on a single partition
             partition_key = run.tags.get(PARTITION_NAME_TAG)
-            result.extend(
+            asset_partition_candidates = [
                 AssetKeyPartitionKey(asset_key, partition_key) for asset_key in failed_asset_keys
-            )
+            ]
+
+        asset_partitions_still_failed = [
+            asset_partition
+            for asset_partition in asset_partition_candidates
+            if asset_partition not in materialized_subset
+        ]
+        result.extend(asset_partitions_still_failed)
 
     return result

@@ -1,13 +1,15 @@
 from pprint import pformat
-from typing import TYPE_CHECKING, Any, Dict, Optional, cast
+from typing import TYPE_CHECKING, Any, Optional, Union, cast
 
 import boto3
 import botocore
 import dagster._check as check
-from dagster import DagsterInvariantViolationError, PipesClient
+from dagster import DagsterInvariantViolationError, MetadataValue, PipesClient
 from dagster._annotations import experimental, public
+from dagster._core.definitions.metadata import RawMetadataMapping
 from dagster._core.definitions.resource_annotation import TreatAsResourceParam
 from dagster._core.errors import DagsterExecutionInterruptedError
+from dagster._core.execution.context.asset_execution_context import AssetExecutionContext
 from dagster._core.execution.context.compute import OpExecutionContext
 from dagster._core.pipes.client import (
     PipesClientCompletedInvocation,
@@ -16,6 +18,7 @@ from dagster._core.pipes.client import (
 )
 from dagster._core.pipes.utils import PipesEnvContextInjector, open_pipes_session
 
+from dagster_aws.pipes.clients.utils import WaiterConfig
 from dagster_aws.pipes.message_readers import PipesCloudWatchLogReader, PipesCloudWatchMessageReader
 
 if TYPE_CHECKING:
@@ -47,7 +50,7 @@ class PipesECSClient(PipesClient, TreatAsResourceParam):
         message_reader: Optional[PipesMessageReader] = None,
         forward_termination: bool = True,
     ):
-        self._client: "ECSClient" = client or boto3.client("ecs")
+        self._client: ECSClient = client or boto3.client("ecs")
         self._context_injector = context_injector or PipesEnvContextInjector()
         self._message_reader = message_reader or PipesCloudWatchMessageReader()
         self.forward_termination = check.bool_param(forward_termination, "forward_termination")
@@ -60,26 +63,30 @@ class PipesECSClient(PipesClient, TreatAsResourceParam):
     def run(
         self,
         *,
-        context: OpExecutionContext,
+        context: Union[OpExecutionContext, AssetExecutionContext],
         run_task_params: "RunTaskRequestRequestTypeDef",
-        extras: Optional[Dict[str, Any]] = None,
+        extras: Optional[dict[str, Any]] = None,
         pipes_container_name: Optional[str] = None,
+        waiter_config: Optional[WaiterConfig] = None,
     ) -> PipesClientCompletedInvocation:
         """Run ECS tasks, enriched with the pipes protocol.
 
         Args:
-            context (OpExecutionContext): The context of the currently executing Dagster op or asset.
+            context (Union[OpExecutionContext, AssetExecutionContext]): The context of the currently executing Dagster op or asset.
             run_task_params (dict): Parameters for the ``run_task`` boto3 ECS client call.
                 Must contain ``taskDefinition`` key.
                 See `Boto3 API Documentation <https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ecs/client/run_task.html#run-task>`_
             extras (Optional[Dict[str, Any]]): Additional information to pass to the Pipes session in the external process.
             pipes_container_name (Optional[str]): If running more than one container in the task,
                 and using :py:class:`PipesCloudWatchMessageReader`, specify the container name which will be running Pipes.
+            waiter_config (Optional[WaiterConfig]): Optional waiter configuration to use. Defaults to 70 days (Delay: 6, MaxAttempts: 1000000).
 
         Returns:
             PipesClientCompletedInvocation: Wrapper containing results reported by the external
             process.
         """
+        waiter_config = waiter_config or WaiterConfig(Delay=6, MaxAttempts=1000000)
+
         with open_pipes_session(
             context=context,
             message_reader=self._message_reader,
@@ -152,6 +159,12 @@ class PipesECSClient(PipesClient, TreatAsResourceParam):
                 overrides  # assign in case overrides was created here as an empty dict
             )
 
+            # inject Dagster tags
+            tags = list(run_task_params.get("tags", []))
+            for key, value in session.default_remote_invocation_info.items():
+                tags.append({"key": key, "value": value})
+            run_task_params["tags"] = tags
+
             response = self._client.run_task(**run_task_params)
 
             if len(response["tasks"]) > 1:
@@ -165,7 +178,7 @@ class PipesECSClient(PipesClient, TreatAsResourceParam):
             task_id = task_arn.split("/")[-1]
             containers = task["containers"]  # pyright: ignore (reportTypedDictNotRequiredAccess)
 
-            def get_cloudwatch_params(container_name: str) -> Optional[Dict[str, str]]:
+            def get_cloudwatch_params(container_name: str) -> Optional[dict[str, str]]:
                 """This will either return the log group and stream for the container, or None in case of a bad log configuration."""
                 if log_config := log_configurations.get(container_name):
                     if log_config["logDriver"] == "awslogs":
@@ -232,7 +245,9 @@ class PipesECSClient(PipesClient, TreatAsResourceParam):
                                 ),
                             )
 
-                response = self._wait_for_completion(response, cluster=cluster)
+                response = self._wait_for_completion(
+                    response, cluster=cluster, waiter_config=waiter_config
+                )
 
                 # check for failed containers
                 failed_containers = {}
@@ -256,24 +271,50 @@ class PipesECSClient(PipesClient, TreatAsResourceParam):
                 raise
 
         context.log.info(f"[pipes] ECS task {task_arn} completed")
-        return PipesClientCompletedInvocation(session)
+        return PipesClientCompletedInvocation(
+            session, metadata=self._extract_dagster_metadata(response)
+        )
 
     def _wait_for_completion(
-        self, start_response: "RunTaskResponseTypeDef", cluster: Optional[str] = None
+        self,
+        start_response: "RunTaskResponseTypeDef",
+        cluster: Optional[str] = None,
+        waiter_config: Optional[WaiterConfig] = None,
     ) -> "DescribeTasksResponseTypeDef":
         waiter = self._client.get_waiter("tasks_stopped")
 
-        params: Dict[str, Any] = {"tasks": [start_response["tasks"][0]["taskArn"]]}  # pyright: ignore (reportGeneralTypeIssues)
+        params: dict[str, Any] = {"tasks": [start_response["tasks"][0]["taskArn"]]}  # pyright: ignore (reportGeneralTypeIssues)
 
         if cluster:
             params["cluster"] = cluster
 
-        waiter.wait(**params)
+        waiter_params = {"WaiterConfig": waiter_config, **params} if waiter_config else params
+
+        waiter.wait(**waiter_params)
+
         return self._client.describe_tasks(**params)
+
+    def _extract_dagster_metadata(
+        self, response: "DescribeTasksResponseTypeDef"
+    ) -> RawMetadataMapping:
+        metadata: RawMetadataMapping = {}
+
+        region = self._client.meta.region_name
+
+        task = response["tasks"][0]
+
+        task_id = task["taskArn"].split("/")[-1]  # pyright: ignore (reportTypedDictNotRequiredAccess)
+        cluster = task["clusterArn"].split("/")[-1]  # pyright: ignore (reportTypedDictNotRequiredAccess)
+
+        metadata["AWS ECS Task URL"] = MetadataValue.url(
+            f"https://{region}.console.aws.amazon.com/ecs/v2/clusters/{cluster}/tasks/{task_id}"
+        )
+
+        return metadata
 
     def _terminate(
         self,
-        context: OpExecutionContext,
+        context: Union[OpExecutionContext, AssetExecutionContext],
         wait_response: "DescribeTasksResponseTypeDef",
         cluster: Optional[str] = None,
     ):

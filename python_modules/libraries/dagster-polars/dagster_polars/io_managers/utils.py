@@ -1,9 +1,9 @@
 import json
-import sys
+from collections.abc import Mapping
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from pprint import pformat
-from typing import Any, Dict, Mapping, Optional, Union
+from typing import Any, Optional, Union
 
 import polars as pl
 from dagster import (
@@ -18,22 +18,19 @@ from dagster import (
 POLARS_DATA_FRAME_ANNOTATIONS = [
     Any,
     pl.DataFrame,
-    Dict[str, pl.DataFrame],
+    dict[str, pl.DataFrame],
     Mapping[str, pl.DataFrame],
     type(None),
     None,
+    dict[str, pl.DataFrame],
 ]
 
 POLARS_LAZY_FRAME_ANNOTATIONS = [
     pl.LazyFrame,
-    Dict[str, pl.LazyFrame],
+    dict[str, pl.LazyFrame],
     Mapping[str, pl.LazyFrame],
+    dict[str, pl.DataFrame],
 ]
-
-
-if sys.version >= "3.9":
-    POLARS_DATA_FRAME_ANNOTATIONS.append(dict[str, pl.DataFrame])  #  type: ignore # ignore needed with Python < 3.9
-    POLARS_LAZY_FRAME_ANNOTATIONS.append(dict[str, pl.DataFrame])  #  type: ignore # ignore needed with Python < 3.9
 
 
 def cast_polars_single_value_to_dagster_table_types(val: Any):
@@ -52,7 +49,7 @@ def cast_polars_single_value_to_dagster_table_types(val: Any):
 
 def get_metadata_schema(
     df: Union[pl.DataFrame, pl.LazyFrame],
-    descriptions: Optional[Dict[str, str]] = None,
+    descriptions: Optional[dict[str, str]] = None,
 ) -> TableSchema:
     """Takes the schema from a dataframe or lazyframe and converts it a Dagster TableSchema.
 
@@ -67,7 +64,7 @@ def get_metadata_schema(
     return TableSchema(
         columns=[
             TableColumn(name=col, type=str(pl_type), description=descriptions.get(col))
-            for col, pl_type in df.schema.items()
+            for col, pl_type in df.collect_schema().items()
         ]
     )
 
@@ -132,7 +129,7 @@ def get_table_metadata(
 
 def get_polars_metadata(
     context: OutputContext, df: Union[pl.DataFrame, pl.LazyFrame]
-) -> Dict[str, MetadataValue]:
+) -> dict[str, MetadataValue]:
     """Retrives some metadata on polars frames
     - DataFrame: stats, row_count, table or schema
     - LazyFrame: schema.

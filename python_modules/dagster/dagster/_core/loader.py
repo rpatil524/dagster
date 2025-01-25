@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from functools import partial
-from typing import TYPE_CHECKING, Dict, Generic, Iterable, Optional, Tuple, Type, TypeVar
+from typing import TYPE_CHECKING, Generic, Optional, TypeVar
 
 from typing_extensions import Self
 
@@ -55,18 +56,16 @@ class LoadingContext(ABC):
 
     @property
     @abstractmethod
-    def loaders(self) -> Dict[Type, Tuple[DataLoader, BlockingDataLoader]]:
+    def loaders(self) -> dict[type, tuple[DataLoader, BlockingDataLoader]]:
         raise NotImplementedError()
 
-    def get_loaders_for(
-        self, ttype: Type["InstanceLoadableBy"]
-    ) -> Tuple[DataLoader, BlockingDataLoader]:
+    def get_loaders_for(self, ttype: type["LoadableBy"]) -> tuple[DataLoader, BlockingDataLoader]:
         if ttype not in self.loaders:
-            if not issubclass(ttype, InstanceLoadableBy):
+            if not issubclass(ttype, LoadableBy):
                 check.failed(f"{ttype} is not Loadable")
 
-            batch_load_fn = partial(ttype._batch_load, instance=self.instance)  # noqa
-            blocking_batch_load_fn = partial(ttype._blocking_batch_load, instance=self.instance)  # noqa
+            batch_load_fn = partial(ttype._batch_load, context=self)  # noqa
+            blocking_batch_load_fn = partial(ttype._blocking_batch_load, context=self)  # noqa
 
             self.loaders[ttype] = (
                 DataLoader(batch_load_fn=batch_load_fn),
@@ -83,19 +82,19 @@ class LoadingContext(ABC):
 # Expected there may be other "Loadable" base classes based on what is needed to load.
 
 
-class InstanceLoadableBy(ABC, Generic[TKey]):
+class LoadableBy(ABC, Generic[TKey]):
     """Make An object Loadable by ID of type TKey using a DagsterInstance."""
 
     @classmethod
     async def _batch_load(
-        cls, keys: Iterable[TKey], instance: "DagsterInstance"
+        cls, keys: Iterable[TKey], context: "LoadingContext"
     ) -> Iterable[Optional[Self]]:
-        return cls._blocking_batch_load(keys, instance)
+        return cls._blocking_batch_load(keys, context)
 
     @classmethod
     @abstractmethod
     def _blocking_batch_load(
-        cls, keys: Iterable[TKey], instance: "DagsterInstance"
+        cls, keys: Iterable[TKey], context: "LoadingContext"
     ) -> Iterable[Optional[Self]]:
         # There is no good way of turning an async function into a sync one that
         # will allow us to execute that sync function inside of a broader async context.
@@ -152,5 +151,5 @@ class LoadingContextForTest(LoadingContext):
         return self._instance
 
     @property
-    def loaders(self) -> Dict[Type, Tuple[DataLoader, BlockingDataLoader]]:
+    def loaders(self) -> dict[type, tuple[DataLoader, BlockingDataLoader]]:
         return self._loaders

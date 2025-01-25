@@ -1,21 +1,22 @@
 import enum
 import itertools
-from typing import Optional, Sequence, Union
+from collections.abc import Sequence
+from typing import Optional, Union
 
 import graphene
 from dagster._core.asset_graph_view.serializable_entity_subset import SerializableEntitySubset
+from dagster._core.definitions.asset_key import AssetKey
 from dagster._core.definitions.declarative_automation.serialized_objects import (
     AutomationConditionEvaluation,
     AutomationConditionSnapshot,
 )
-from dagster._core.definitions.partition import PartitionsDefinition
 from dagster._core.scheduler.instigation import AutoMaterializeAssetEvaluationRecord
 
 from dagster_graphql.implementation.events import iterate_metadata_entries
-from dagster_graphql.schema.asset_key import GrapheneAssetKey
 from dagster_graphql.schema.auto_materialize_asset_evaluations import (
     GrapheneAutoMaterializeAssetEvaluationNeedsMigrationError,
 )
+from dagster_graphql.schema.entity_key import GrapheneAssetKey, GrapheneEntityKey
 from dagster_graphql.schema.metadata import GrapheneMetadataEntry
 from dagster_graphql.schema.util import ResolveInfo, non_null_list
 
@@ -248,11 +249,12 @@ class GrapheneAutomationConditionEvaluationNode(graphene.ObjectType):
 
 class GrapheneAssetConditionEvaluationRecord(graphene.ObjectType):
     id = graphene.NonNull(graphene.ID)
-    evaluationId = graphene.NonNull(graphene.Int)
+    evaluationId = graphene.NonNull(graphene.ID)
     runIds = non_null_list(graphene.String)
     timestamp = graphene.NonNull(graphene.Float)
 
-    assetKey = graphene.NonNull(GrapheneAssetKey)
+    assetKey = graphene.Field(GrapheneAssetKey)
+    entityKey = graphene.NonNull(GrapheneEntityKey)
     numRequested = graphene.NonNull(graphene.Int)
 
     startTimestamp = graphene.Field(graphene.Float)
@@ -272,7 +274,6 @@ class GrapheneAssetConditionEvaluationRecord(graphene.ObjectType):
     def __init__(
         self,
         record: AutoMaterializeAssetEvaluationRecord,
-        partitions_def: Optional[PartitionsDefinition],
     ):
         evaluation_with_run_ids = record.get_evaluation_with_run_ids()
         root_evaluation = evaluation_with_run_ids.evaluation
@@ -284,7 +285,10 @@ class GrapheneAssetConditionEvaluationRecord(graphene.ObjectType):
             evaluationId=record.evaluation_id,
             timestamp=record.timestamp,
             runIds=evaluation_with_run_ids.run_ids,
-            assetKey=GrapheneAssetKey(path=record.key.path),
+            assetKey=GrapheneEntityKey.from_entity_key(record.key)
+            if isinstance(record.key, AssetKey)
+            else None,
+            entityKey=GrapheneEntityKey.from_entity_key(record.key),
             numRequested=root_evaluation.true_subset.size,
             startTimestamp=root_evaluation.start_timestamp,
             endTimestamp=root_evaluation.end_timestamp,

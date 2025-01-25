@@ -83,7 +83,7 @@ def test_assets(schema_prefix, auto_materialize_policy, monkeypatch):
     )
 
     materializations = [
-        event.event_specific_data.materialization
+        event.event_specific_data.materialization  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
         for event in res.events_for_node(ab_assets_name)
         if event.event_type_value == "ASSET_MATERIALIZATION"
     ]
@@ -185,7 +185,7 @@ def test_assets_with_normalization(
     )
 
     materializations = [
-        event.event_specific_data.materialization
+        event.event_specific_data.materialization  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
         for event in res.events_for_node(ab_assets_name)
         if event.event_type_value == "ASSET_MATERIALIZATION"
     ]
@@ -288,9 +288,9 @@ def test_built_airbyte_asset_with_downstream_asset_via_definition():
     def downstream_of_ab():
         return None
 
-    assert len(downstream_of_ab.input_names) == 2
-    assert downstream_of_ab.op.ins["some_prefix_foo"].dagster_type.is_nothing
-    assert downstream_of_ab.op.ins["some_prefix_bar"].dagster_type.is_nothing
+    assert len(downstream_of_ab.input_names) == 2  # pyright: ignore[reportArgumentType]
+    assert downstream_of_ab.op.ins["some_prefix_foo"].dagster_type.is_nothing  # pyright: ignore[reportAttributeAccessIssue]
+    assert downstream_of_ab.op.ins["some_prefix_bar"].dagster_type.is_nothing  # pyright: ignore[reportAttributeAccessIssue]
 
 
 def test_built_airbyte_asset_with_downstream_asset():
@@ -305,12 +305,12 @@ def test_built_airbyte_asset_with_downstream_asset():
     def downstream_of_ab():
         return None
 
-    assert len(downstream_of_ab.input_names) == 2
-    assert downstream_of_ab.op.ins["some_prefix_foo"].dagster_type.is_nothing
-    assert downstream_of_ab.op.ins["some_prefix_bar"].dagster_type.is_nothing
+    assert len(downstream_of_ab.input_names) == 2  # pyright: ignore[reportArgumentType]
+    assert downstream_of_ab.op.ins["some_prefix_foo"].dagster_type.is_nothing  # pyright: ignore[reportAttributeAccessIssue]
+    assert downstream_of_ab.op.ins["some_prefix_bar"].dagster_type.is_nothing  # pyright: ignore[reportAttributeAccessIssue]
 
 
-def test_built_airbyte_asset_relation_identifier():
+def test_built_airbyte_asset_table_name():
     destination_tables = ["foo", "bar"]
 
     ab_assets = build_airbyte_assets(
@@ -322,7 +322,7 @@ def test_built_airbyte_asset_relation_identifier():
     # Check relation identifier metadata is added correctly to asset def
     assets_def = ab_assets[0]
     for metadata in assets_def.metadata_by_key.values():
-        assert metadata.get("dagster/relation_identifier") is None
+        assert metadata.get("dagster/table_name") is None
 
     ab_assets = build_airbyte_assets(
         "12345",
@@ -331,15 +331,15 @@ def test_built_airbyte_asset_relation_identifier():
         destination_schema="test_schema",
     )
 
-    relation_identifiers = {"test_database.test_schema.foo", "test_database.test_schema.bar"}
+    table_names = {"test_database.test_schema.foo", "test_database.test_schema.bar"}
 
     # Check relation identifier metadata is added correctly to asset def
     assets_def = ab_assets[0]
     for key, metadata in assets_def.metadata_by_key.items():
         # Extract the table name from the asset key
         table_name = key.path[-1]
-        assert metadata["dagster/relation_identifier"] in relation_identifiers
-        assert table_name in metadata["dagster/relation_identifier"]
+        assert metadata["dagster/table_name"] in table_names
+        assert table_name in metadata["dagster/table_name"]
 
     ab_assets = build_airbyte_assets(
         "12345",
@@ -349,12 +349,12 @@ def test_built_airbyte_asset_relation_identifier():
         normalization_tables={"foo": {"baz"}},
     )
 
-    relation_identifiers.add("test_database.test_schema.foo.baz")
+    table_names.add("test_database.test_schema.foo.baz")
 
     # Check relation identifier metadata is added correctly to asset def
     assets_def = ab_assets[0]
     for key, metadata in assets_def.metadata_by_key.items():
         # Extract the table name from the asset key
         table_name = key.path[-1]
-        assert metadata["dagster/relation_identifier"] in relation_identifiers
-        assert table_name in metadata["dagster/relation_identifier"]
+        assert metadata["dagster/table_name"] in table_names
+        assert table_name in metadata["dagster/table_name"]

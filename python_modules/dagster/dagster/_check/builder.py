@@ -1,25 +1,22 @@
 import collections.abc
 import sys
+from collections.abc import Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import (
+    Annotated,
     Any,
     Callable,
     ForwardRef,
     Generic,
     Literal,
-    Mapping,
     NamedTuple,
     Optional,
-    Tuple,
-    Type,
     TypeVar,
     Union,
     get_args,
     get_origin,
 )
-
-from typing_extensions import Annotated
 
 from dagster._check.functions import CheckError, TypeOrTupleOfTypes, failed, invariant
 
@@ -31,7 +28,7 @@ except ImportError:
 
 NoneType = type(None)
 
-_contextual_ns: ContextVar[Mapping[str, Type]] = ContextVar("_contextual_ns", default={})
+_contextual_ns: ContextVar[Mapping[str, type]] = ContextVar("_contextual_ns", default={})
 
 
 class ImportFrom(NamedTuple):
@@ -87,7 +84,7 @@ class EvalContext(NamedTuple):
 
     @staticmethod
     @contextmanager
-    def contextual_namespace(ns: Mapping[str, Type]):
+    def contextual_namespace(ns: Mapping[str, type]):
         token = _contextual_ns.set(ns)
         try:
             yield
@@ -115,14 +112,14 @@ class EvalContext(NamedTuple):
             **self.local_ns,
         }
 
-    def eval_forward_ref(self, ref: ForwardRef) -> Optional[Type]:
+    def eval_forward_ref(self, ref: ForwardRef) -> Optional[type]:
         if ref.__forward_arg__ in self.lazy_imports:
             # if we are going to add a lazy import for the type,
             # return a placeholder to grab the name from
             return type(ref.__forward_arg__, (_LazyImportPlaceholder,), {})
         try:
             if sys.version_info <= (3, 9):
-                return ref._evaluate(  # noqa
+                return ref._evaluate(  # noqa # type: ignore
                     globalns=self.get_merged_ns(),
                     localns={},
                 )
@@ -165,7 +162,7 @@ def _coerce_type(
     # coerce input type in to the type we want to pass to the check call
 
     # Any type translates to passing None for the of_type argument
-    if ttype is Any:
+    if ttype is Any or ttype is None:
         return None
 
     # assume naked strings should be ForwardRefs
@@ -185,6 +182,11 @@ def _coerce_type(
         _process_annotated(ttype, args, eval_ctx)
         return _coerce_type(args[0], eval_ctx)
 
+    # cant do isinstance against TypeDict (and we cant subclass check for it)
+    # so just coerce any dict subclasses in to dict
+    if isinstance(ttype, type) and issubclass(ttype, dict):
+        return dict
+
     # Unions should become a tuple of types to pass to the of_type argument
     # ultimately used as second arg in isinstance(target, tuple_of_types)
     if origin in (UnionType, Union):
@@ -203,8 +205,8 @@ def _coerce_type(
 
 
 def _container_pair_args(
-    args: Tuple[Type, ...], eval_ctx
-) -> Tuple[Optional[TypeOrTupleOfTypes], Optional[TypeOrTupleOfTypes]]:
+    args: tuple[type, ...], eval_ctx
+) -> tuple[Optional[TypeOrTupleOfTypes], Optional[TypeOrTupleOfTypes]]:
     # process tuple of types as if its two arguments to a container type
 
     if len(args) == 2:
@@ -214,7 +216,7 @@ def _container_pair_args(
 
 
 def _container_single_arg(
-    args: Tuple[Type, ...], eval_ctx: EvalContext
+    args: tuple[type, ...], eval_ctx: EvalContext
 ) -> Optional[TypeOrTupleOfTypes]:
     # process tuple of types as if its the single argument to a container type
 
@@ -275,7 +277,7 @@ def _process_annotated(ttype, args, eval_ctx: EvalContext):
 
 
 def build_check_call_str(
-    ttype: Type,
+    ttype: type,
     name: str,
     eval_ctx: EvalContext,
 ) -> str:

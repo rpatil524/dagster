@@ -71,7 +71,7 @@ export const Config = {
     nodesep: -10,
     nodeHeight: 'auto',
     groupPaddingTop: 65,
-    groupPaddingBottom: -15,
+    groupPaddingBottom: -4,
     groupRendering: 'if-varied',
     clusterpaddingtop: 100,
   },
@@ -86,7 +86,7 @@ export const Config = {
     edgesep: 10,
     nodeHeight: 'auto',
     groupPaddingTop: 55,
-    groupPaddingBottom: -5,
+    groupPaddingBottom: -4,
     groupRendering: 'if-varied',
   },
 };
@@ -125,6 +125,7 @@ export const layoutAssetGraphImpl = (
   const shouldRender = (node?: GraphNode) => node;
   const renderedNodes = Object.values(graphData.nodes).filter(shouldRender);
   const expandedGroups = graphData.expandedGroups || [];
+  const expandedGroupsSet = new Set(expandedGroups);
 
   // Identify all the groups
   const groups: {[id: string]: GroupLayout} = {};
@@ -133,7 +134,7 @@ export const layoutAssetGraphImpl = (
       const id = groupIdForNode(node);
       groups[id] = groups[id] || {
         id,
-        expanded: expandedGroups.includes(id),
+        expanded: expandedGroupsSet.has(id),
         groupName: node.definition.groupName,
         repositoryName: node.definition.repository.name,
         repositoryLocationName: node.definition.repository.location.name,
@@ -148,7 +149,7 @@ export const layoutAssetGraphImpl = (
 
   if (groupsPresent) {
     Object.keys(groups).forEach((groupId) => {
-      if (expandedGroups.includes(groupId)) {
+      if (expandedGroupsSet.has(groupId)) {
         // sized based on it's children, but "border" tells Dagre we want cluster-level
         // spacing between the node and others. Necessary because our groups have title bars.
         g.setNode(groupId, {borderType: 'borderRight'});
@@ -160,7 +161,7 @@ export const layoutAssetGraphImpl = (
 
   // Add all the nodes inside expanded groups to the graph
   renderedNodes.forEach((node) => {
-    if (!groupsPresent || expandedGroups.includes(groupIdForNode(node))) {
+    if (!groupsPresent || expandedGroupsSet.has(groupIdForNode(node))) {
       const label =
         config.nodeHeight === 'auto'
           ? getAssetNodeDimensions(node.definition)
@@ -193,11 +194,11 @@ export const layoutAssetGraphImpl = (
       let w = downstreamId;
 
       const wGroup = groupIdForAssetId[downstreamId];
-      if (groupsPresent && wGroup && !expandedGroups.includes(wGroup)) {
+      if (groupsPresent && wGroup && !expandedGroupsSet.has(wGroup)) {
         w = wGroup;
       }
       const vGroup = groupIdForAssetId[upstreamId];
-      if (groupsPresent && vGroup && !expandedGroups.includes(vGroup)) {
+      if (groupsPresent && vGroup && !expandedGroupsSet.has(vGroup)) {
         v = vGroup;
       }
       if (v === w) {
@@ -241,7 +242,7 @@ export const layoutAssetGraphImpl = (
     };
     if (!isGroupId(id)) {
       nodes[id] = {id, bounds};
-    } else if (!expandedGroups.includes(id)) {
+    } else if (!expandedGroupsSet.has(id)) {
       const group = groups[id]!;
       group.bounds = bounds;
     }
@@ -338,7 +339,10 @@ export const extendBounds = (a: IBounds, b: IBounds) => {
 };
 
 export const ASSET_NODE_WIDTH = 320;
-export const ASSET_NODE_NAME_MAX_LENGTH = 38;
+export const ASSET_NODE_TAGS_HEIGHT = 28;
+export const ASSET_NODE_STATUS_ROW_HEIGHT = 25;
+
+export const ASSET_NODE_NAME_MAX_LENGTH = 31;
 
 export const getAssetNodeDimensions = (def: {
   assetKey: {path: string[]};
@@ -351,24 +355,19 @@ export const getAssetNodeDimensions = (def: {
   computeKind: string | null;
   changedReasons?: ChangeReason[];
 }) => {
-  const width = ASSET_NODE_WIDTH;
+  let height = 0;
 
-  let height = 106; // top tags area + name + description
+  height += ASSET_NODE_TAGS_HEIGHT; // top tags
 
-  if (!def.isMaterializable && def.isObservable) {
-    height += 30; // status row
-  } else {
-    height += 28; // status row
-    height += 28; // checks row
-    if (def.isPartitioned) {
-      height += 52;
-    }
-  }
-  if (def.changedReasons?.length) {
-    height += 30;
+  height += 76; // box padding + border + name + description
+
+  if (def.isPartitioned && def.isMaterializable) {
+    height += ASSET_NODE_STATUS_ROW_HEIGHT;
   }
 
-  height += 36; // tags beneath
+  height += ASSET_NODE_STATUS_ROW_HEIGHT; // status row
+  height += ASSET_NODE_STATUS_ROW_HEIGHT; // checks row
+  height += ASSET_NODE_TAGS_HEIGHT; // bottom tags
 
-  return {width, height};
+  return {width: ASSET_NODE_WIDTH, height};
 };

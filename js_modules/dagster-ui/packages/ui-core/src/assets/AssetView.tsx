@@ -11,18 +11,22 @@ import {AssetFeatureContext} from './AssetFeatureContext';
 import {ASSET_NODE_DEFINITION_FRAGMENT, AssetNodeDefinition} from './AssetNodeDefinition';
 import {ASSET_NODE_INSTIGATORS_FRAGMENT} from './AssetNodeInstigatorTag';
 import {AssetNodeLineage} from './AssetNodeLineage';
-import {AssetNodeOverview, AssetNodeOverviewNonSDA} from './AssetNodeOverview';
 import {AssetPartitions} from './AssetPartitions';
 import {AssetPlotsPage} from './AssetPlotsPage';
 import {AssetTabs} from './AssetTabs';
 import {useAllAssets} from './AssetsCatalogTable';
-import {AssetAutomaterializePolicyPage} from './AutoMaterializePolicyPage/AssetAutomaterializePolicyPage';
+import {AssetAutomationRoot} from './AutoMaterializePolicyPage/AssetAutomationRoot';
 import {ChangedReasonsTag} from './ChangedReasons';
 import {LaunchAssetExecutionButton} from './LaunchAssetExecutionButton';
 import {UNDERLYING_OPS_ASSET_NODE_FRAGMENT} from './UnderlyingOpsOrGraph';
 import {AssetChecks} from './asset-checks/AssetChecks';
 import {assetDetailsPathForKey} from './assetDetailsPathForKey';
+import {AssetNodeOverview, AssetNodeOverviewNonSDA} from './overview/AssetNodeOverview';
 import {AssetKey, AssetViewParams} from './types';
+import {healthRefreshHintFromLiveData} from './usePartitionHealthData';
+import {useReportEventsDialog} from './useReportEventsDialog';
+import {useWipeDialog} from './useWipeDialog';
+import {gql, useQuery} from '../apollo-client';
 import {AssetTableDefinitionFragment} from './types/AssetTableFragment.types';
 import {
   AssetViewDefinitionNodeFragment,
@@ -30,10 +34,6 @@ import {
   AssetViewDefinitionQueryVariables,
 } from './types/AssetView.types';
 import {useDeleteDynamicPartitionsDialog} from './useDeleteDynamicPartitionsDialog';
-import {healthRefreshHintFromLiveData} from './usePartitionHealthData';
-import {useReportEventsModal} from './useReportEventsModal';
-import {useWipeModal} from './useWipeModal';
-import {gql, useQuery} from '../apollo-client';
 import {currentPageAtom} from '../app/analytics';
 import {Timestamp} from '../app/time/Timestamp';
 import {AssetLiveDataRefreshButton, useAssetLiveData} from '../asset-data/AssetLiveDataProvider';
@@ -221,7 +221,8 @@ export const AssetView = ({assetKey, headerBreadcrumbs, writeAssetVisit, current
     if (isLoading) {
       return <AssetLoadingDefinitionState />;
     }
-    return <AssetAutomaterializePolicyPage assetKey={assetKey} definition={definition} />;
+
+    return <AssetAutomationRoot assetKey={assetKey} definition={definition} />;
   };
 
   const renderChecksTab = () => {
@@ -277,7 +278,7 @@ export const AssetView = ({assetKey, headerBreadcrumbs, writeAssetVisit, current
     setCurrentPage(({specificPath}) => ({specificPath, path: `${path}?view=${selectedTab}`}));
   }, [path, selectedTab, setCurrentPage]);
 
-  const wipe = useWipeModal(
+  const wipe = useWipeDialog(
     definition && !definition.isObservable
       ? {
           assetKey: definition.assetKey,
@@ -295,7 +296,7 @@ export const AssetView = ({assetKey, headerBreadcrumbs, writeAssetVisit, current
     },
   );
 
-  const reportEvents = useReportEventsModal(
+  const reportEvents = useReportEventsDialog(
     definition && !definition.isObservable && repoAddress
       ? {
           assetKey: definition.assetKey,

@@ -1,21 +1,11 @@
-import os
+import sys
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from functools import cached_property
 from queue import Queue
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Dict,
-    Iterator,
-    Mapping,
-    Optional,
-    Sequence,
-    TypedDict,
-    Union,
-    cast,
-)
+from typing import TYPE_CHECKING, Any, Literal, Optional, TypedDict, Union, cast
 
 from dagster_pipes import (
     DAGSTER_PIPES_CONTEXT_ENV_VAR,
@@ -45,16 +35,25 @@ from dagster._core.definitions.asset_check_spec import AssetCheckSeverity
 from dagster._core.definitions.data_version import DataProvenance, DataVersion
 from dagster._core.definitions.events import AssetKey
 from dagster._core.definitions.metadata import MetadataValue, normalize_metadata_value
+from dagster._core.definitions.metadata.table import (
+    TableColumn,
+    TableColumnConstraints,
+    TableColumnDep,
+    TableColumnLineage,
+    TableRecord,
+    TableSchema,
+)
 from dagster._core.definitions.partition_key_range import PartitionKeyRange
 from dagster._core.definitions.result import MaterializeResult
 from dagster._core.definitions.time_window_partitions import (
     TimeWindow,
     has_one_dimension_time_window_partitioning,
 )
-from dagster._core.errors import DagsterPipesExecutionError
+from dagster._core.errors import DagsterInvariantViolationError, DagsterPipesExecutionError
 from dagster._core.events import EngineEventData
-from dagster._core.execution.context.compute import OpExecutionContext
+from dagster._core.execution.context.asset_execution_context import AssetExecutionContext
 from dagster._core.execution.context.invocation import BaseDirectExecutionContext
+from dagster._core.execution.context.op_execution_context import OpExecutionContext
 from dagster._utils.error import (
     ExceptionInfo,
     SerializableErrorInfo,
@@ -80,7 +79,7 @@ class PipesMessageHandler:
     """Class to process :py:obj:`PipesMessage` objects received from a pipes process.
 
     Args:
-        context (OpExecutionContext): The context for the executing op/asset.
+        context (Union[OpExecutionContext, AssetExecutionContext]): The context for the executing op/asset.
         message_reader (PipesMessageReader): The message reader used to read messages from the
             external process.
     """
@@ -88,7 +87,11 @@ class PipesMessageHandler:
     # In the future it may make sense to merge PipesMessageReader and PipesMessageHandler, or
     # otherwise adjust their relationship. The current interaction between the two is a bit awkward,
     # but it would also be awkward to have a monolith that users extend.
-    def __init__(self, context: OpExecutionContext, message_reader: "PipesMessageReader") -> None:
+    def __init__(
+        self,
+        context: Union[OpExecutionContext, AssetExecutionContext],
+        message_reader: "PipesMessageReader",
+    ) -> None:
         self._context = context
         self._message_reader = message_reader
         # Queue is thread-safe
@@ -96,6 +99,7 @@ class PipesMessageHandler:
         self._extra_msg_queue: Queue[Any] = Queue()
         # Only read by the main thread after all messages are handled, so no need for a lock
         self._received_opened_msg = False
+        self._messages_include_stdio_logs = False
         self._received_closed_msg = False
         self._opened_payload: Optional[PipesOpenedData] = None
 
@@ -125,9 +129,8 @@ class PipesMessageHandler:
             k: self._resolve_metadata_value(v["raw_value"], v["type"]) for k, v in metadata.items()
         }
 
-    def _resolve_metadata_value(
-        self, value: Any, metadata_type: PipesMetadataType
-    ) -> MetadataValue:
+    @staticmethod
+    def _resolve_metadata_value(value: Any, metadata_type: PipesMetadataType) -> MetadataValue:
         if metadata_type == PIPES_METADATA_TYPE_INFER:
             return normalize_metadata_value(value)
         elif metadata_type == "text":
@@ -153,7 +156,54 @@ class PipesMessageHandler:
         elif metadata_type == "asset":
             return MetadataValue.asset(AssetKey.from_user_string(value))
         elif metadata_type == "table":
-            return MetadataValue.table(value)
+            value = check.mapping_param(value, "table_value", key_type=str)
+            return MetadataValue.table(
+                records=[TableRecord(record) for record in value["records"]],
+                schema=TableSchema(
+                    columns=[
+                        TableColumn(
+                            name=column["name"],
+                            type=column["type"],
+                            description=column.get("description"),
+                            tags=column.get("tags"),
+                            constraints=TableColumnConstraints(**column["constraints"])
+                            if column.get("constraints")
+                            else None,
+                        )
+                        for column in value["schema"]
+                    ]
+                ),
+            )
+        elif metadata_type == "table_schema":
+            value = check.mapping_param(value, "table_schema_value", key_type=str)
+            return MetadataValue.table_schema(
+                schema=TableSchema(
+                    columns=[
+                        TableColumn(
+                            name=column["name"],
+                            type=column["type"],
+                            description=column.get("description"),
+                            tags=column.get("tags"),
+                            constraints=TableColumnConstraints(**column["constraints"])
+                            if column.get("constraints")
+                            else None,
+                        )
+                        for column in value["columns"]
+                    ]
+                )
+            )
+        elif metadata_type == "table_column_lineage":
+            value = check.mapping_param(value, "table_column_value", key_type=str)
+            return MetadataValue.column_lineage(
+                lineage=TableColumnLineage(
+                    deps_by_column={
+                        column: [TableColumnDep(**dep) for dep in deps]
+                        for column, deps in value["deps_by_column"].items()
+                    }
+                )
+            )
+        elif metadata_type == "timestamp":
+            return MetadataValue.timestamp(float(check.numeric_param(value, "timestamp")))
         elif metadata_type == "null":
             return MetadataValue.null()
         else:
@@ -177,6 +227,8 @@ class PipesMessageHandler:
             self._handle_report_asset_check(**message["params"])  # type: ignore
         elif method == "log":
             self._handle_log(**message["params"])  # type: ignore
+        elif method == "log_external_stream":
+            self._handle_log_external_stream(**message["params"])  # type: ignore
         elif method == "report_custom_message":
             self._handle_extra_message(**message["params"])  # type: ignore
         else:
@@ -207,7 +259,7 @@ class PipesMessageHandler:
         check.str_param(asset_key, "asset_key")
         check.opt_str_param(data_version, "data_version")
         metadata = check.opt_mapping_param(metadata, "metadata", key_type=str)
-        resolved_asset_key = AssetKey.from_user_string(asset_key)
+        resolved_asset_key = AssetKey.from_escaped_user_string(asset_key)
         resolved_metadata = self._resolve_metadata(metadata)
         resolved_data_version = None if data_version is None else DataVersion(data_version)
         result = MaterializeResult(
@@ -230,7 +282,7 @@ class PipesMessageHandler:
         check.bool_param(passed, "passed")
         check.literal_param(severity, "severity", [x.value for x in AssetCheckSeverity])
         metadata = check.opt_mapping_param(metadata, "metadata", key_type=str)
-        resolved_asset_key = AssetKey.from_user_string(asset_key)
+        resolved_asset_key = AssetKey.from_escaped_user_string(asset_key)
         resolved_metadata = self._resolve_metadata(metadata)
         resolved_severity = AssetCheckSeverity(severity)
         result = AssetCheckResult(
@@ -245,6 +297,16 @@ class PipesMessageHandler:
     def _handle_log(self, message: str, level: str = "info") -> None:
         check.str_param(message, "message")
         self._context.log.log(level, message)
+
+    def _handle_log_external_stream(
+        self, stream: Literal["stdout", "stderr"], text: str, extras: Optional[PipesExtras] = None
+    ):
+        if stream == "stdout":
+            sys.stdout.write(text)
+        elif stream == "stderr":
+            sys.stderr.write(text)
+        else:
+            raise DagsterInvariantViolationError(f"Unexpected stream: {stream}")
 
     def _handle_extra_message(self, payload: Any):
         self._extra_msg_queue.put(payload)
@@ -304,61 +366,12 @@ class PipesSession:
     message_handler: PipesMessageHandler
     context_injector_params: PipesParams
     message_reader_params: PipesParams
-    context: OpExecutionContext
+    context: Union[OpExecutionContext, AssetExecutionContext]
     created_at: datetime = field(default_factory=datetime.now)
 
     @cached_property
-    def default_remote_invocation_info(self) -> Dict[str, str]:
-        """Key-value pairs encoding metadata about the launching Dagster process, typically attached to the remote
-        environment.
-
-        Remote execution environments commonly have their own concepts of tags or labels. It's useful to include
-        Dagster-specific metadata in these environments to help with debugging, monitoring, and linking remote
-        resources back to Dagster. For example, the Kubernetes Pipes client is using these tags as Kubernetes labels.
-
-        By default the tags include:
-        * dagster/run-id
-        * dagster/job
-
-        And, if available:
-        * dagster/code-location
-        * dagster/user
-        * dagster/partition-key
-
-        And, for Dagster+ deployments:
-        * dagster/deployment-name
-        * dagster/git-repo
-        * dagster/git-branch
-        * dagster/git-sha
-        """
-        tags = {
-            "dagster/run-id": self.context.run_id,
-            "dagster/job": self.context.job_name,
-        }
-
-        if self.context.dagster_run.remote_job_origin:
-            tags["dagster/code-location"] = (
-                self.context.dagster_run.remote_job_origin.repository_origin.code_location_origin.location_name
-            )
-
-        if user := self.context.get_tag("dagster/user"):
-            tags["dagster/user"] = user
-
-        if self.context.has_partition_key:
-            tags["dagster/partition-key"] = self.context.partition_key
-
-        # now using the walrus operator for os.getenv("DAGSTER_CLOUD_DEPLOYMENT_NAME")
-
-        for env_var, tag in {
-            "DAGSTER_CLOUD_DEPLOYMENT_NAME": "deployment-name",
-            "DAGSTER_CLOUD_GIT_REPO": "git-repo",
-            "DAGSTER_CLOUD_GIT_BRANCH": "git-branch",
-            "DAGSTER_CLOUD_GIT_SHA": "git-sha",
-        }.items():
-            if value := os.getenv(env_var):
-                tags[f"dagster/{tag}"] = value
-
-        return tags
+    def default_remote_invocation_info(self) -> dict[str, str]:
+        return {**self.context.dagster_run.dagster_execution_info}
 
     @public
     def get_bootstrap_env_vars(self) -> Mapping[str, str]:
@@ -412,33 +425,42 @@ class PipesSession:
         self,
         *,
         implicit_materializations: bool = True,
+        metadata: Optional[Mapping[str, MetadataValue]] = None,
     ) -> Sequence[PipesExecutionResult]:
-        """:py:class:`PipesExecutionResult` objects reported from the external process.
+        """:py:class:`PipesExecutionResult` objects reported from the external process,
+            potentially modified by Pipes.
 
         Args:
             implicit_materializations (bool): Create MaterializeResults for expected assets
                 even was nothing is reported from the external process.
+            metadata (Optional[Mapping[str, MetadataValue]]): Arbitrary metadata that will be attached to all
+                results generated by the invocation. Useful for attaching information to
+                asset materializations and checks that is available via the external process launch API
+                but not in the external process itself (e.g. a job_id param returned by the launch API call).
 
         Returns:
             Sequence[PipesExecutionResult]: Result reported by external process.
         """
+        metadata = metadata or {}
+
         reported = self.message_handler.get_reported_results()
+        reported = tuple(self._inject_metadata_into_results(reported, metadata))
+
         if not implicit_materializations:
             return reported
 
         reported_keys = set(
             result.asset_key for result in reported if isinstance(result, MaterializeResult)
         )
-        implicit = (
+        implicit = [
             MaterializeResult(asset_key=key)
             for key in self.context.selected_asset_keys
             if key not in reported_keys
-        )
+        ]
 
-        return (
-            *reported,
-            *implicit,
-        )
+        implicit = self._inject_metadata_into_results(implicit, metadata)
+
+        return (*reported, *implicit)
 
     @public
     def get_reported_results(self) -> Sequence[PipesExecutionResult]:
@@ -470,9 +492,19 @@ class PipesSession:
         """
         self.message_handler.on_launched(launched_payload)
 
+    def _inject_metadata_into_results(
+        self, results: Sequence[PipesExecutionResult], metadata: Mapping[str, MetadataValue]
+    ) -> Sequence[PipesExecutionResult]:
+        results_with_metadata = []
+        for result in results:
+            result = result._replace(metadata={**(result.metadata or {}), **metadata})  # noqa: PLW2901
+            results_with_metadata.append(result)
+
+        return results_with_metadata
+
 
 def build_external_execution_context_data(
-    context: OpExecutionContext,
+    context: Union[OpExecutionContext, AssetExecutionContext],
     extras: Optional[PipesExtras],
 ) -> "PipesContextData":
     asset_keys = (
@@ -525,7 +557,11 @@ def build_external_execution_context_data(
 
 
 def _convert_asset_key(asset_key: AssetKey) -> str:
-    return asset_key.to_user_string()
+    r"""Convert asset key to Pipes-compatible string representation.
+
+    This includes escaping forward slashes (/) with backslashes (\).
+    """
+    return asset_key.to_escaped_user_string()
 
 
 def _convert_data_provenance(

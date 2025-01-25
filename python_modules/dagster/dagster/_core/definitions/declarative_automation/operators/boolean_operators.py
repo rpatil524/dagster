@@ -1,6 +1,11 @@
-from typing import List, Sequence
+import asyncio
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Union
+
+from typing_extensions import TypeIs
 
 import dagster._check as check
+from dagster._annotations import public
 from dagster._core.definitions.asset_key import T_EntityKey
 from dagster._core.definitions.declarative_automation.automation_condition import (
     AutomationCondition,
@@ -8,8 +13,41 @@ from dagster._core.definitions.declarative_automation.automation_condition impor
     BuiltinAutomationCondition,
 )
 from dagster._core.definitions.declarative_automation.automation_context import AutomationContext
-from dagster._record import record
+from dagster._core.definitions.declarative_automation.operators.dep_operators import (
+    DepsAutomationCondition,
+)
+from dagster._record import copy, record
 from dagster._serdes.serdes import whitelist_for_serdes
+
+if TYPE_CHECKING:
+    from dagster._core.definitions.asset_selection import AssetSelection
+
+
+def _has_allow_ignore(
+    condition: AutomationCondition,
+) -> TypeIs[
+    Union[
+        DepsAutomationCondition,
+        "AndAutomationCondition",
+        "OrAutomationCondition",
+        "NotAutomationCondition",
+    ]
+]:
+    from dagster._core.definitions.declarative_automation.operators.boolean_operators import (
+        AndAutomationCondition,
+        NotAutomationCondition,
+        OrAutomationCondition,
+    )
+
+    return isinstance(
+        condition,
+        (
+            DepsAutomationCondition,
+            AndAutomationCondition,
+            OrAutomationCondition,
+            NotAutomationCondition,
+        ),
+    )
 
 
 @whitelist_for_serdes(storage_name="AndAssetCondition")
@@ -35,14 +73,15 @@ class AndAutomationCondition(BuiltinAutomationCondition[T_EntityKey]):
     def requires_cursor(self) -> bool:
         return False
 
-    def evaluate(self, context: AutomationContext[T_EntityKey]) -> AutomationResult[T_EntityKey]:
-        child_results: List[AutomationResult] = []
+    async def evaluate(
+        self, context: AutomationContext[T_EntityKey]
+    ) -> AutomationResult[T_EntityKey]:
+        child_results: list[AutomationResult] = []
         true_subset = context.candidate_subset
         for i, child in enumerate(self.children):
-            child_context = context.for_child_condition(
+            child_result = await context.for_child_condition(
                 child_condition=child, child_index=i, candidate_subset=true_subset
-            )
-            child_result = child.evaluate(child_context)
+            ).evaluate_async()
             child_results.append(child_result)
             true_subset = true_subset.compute_intersection(child_result.true_subset)
         return AutomationResult(context, true_subset, child_results=child_results)
@@ -55,8 +94,65 @@ class AndAutomationCondition(BuiltinAutomationCondition[T_EntityKey]):
         operands = [child for child in self.operands if child != condition]
         if len(operands) < 2:
             check.failed("Cannot have fewer than 2 operands in an AndAutomationCondition")
-        return AndAutomationCondition(
-            operands=[child for child in self.operands if child != condition]
+        return copy(self, operands=[child for child in self.operands if child != condition])
+
+    @public
+    def replace(
+        self, old: Union[AutomationCondition, str], new: AutomationCondition
+    ) -> AutomationCondition:
+        """Replaces all instances of ``old`` across any sub-conditions with ``new``.
+
+        If ``old`` is a string, then conditions with a label matching
+        that string will be replaced.
+
+        Args:
+            old (Union[AutomationCondition, str]): The condition to replace.
+            new (AutomationCondition): The condition to replace with.
+        """
+        return (
+            new
+            if old in [self, self.get_label()]
+            else copy(self, operands=[child.replace(old, new) for child in self.operands])
+        )
+
+    @public
+    def allow(self, selection: "AssetSelection") -> "AndAutomationCondition":
+        """Applies the ``.allow()`` method across all sub-conditions.
+
+        This impacts any dep-related sub-conditions.
+
+        Args:
+            selection (AssetSelection): The selection to allow.
+        """
+        from dagster._core.definitions.asset_selection import AssetSelection
+
+        check.inst_param(selection, "selection", AssetSelection)
+        return copy(
+            self,
+            operands=[
+                child.allow(selection) if _has_allow_ignore(child) else child
+                for child in self.operands
+            ],
+        )
+
+    @public
+    def ignore(self, selection: "AssetSelection") -> "AndAutomationCondition":
+        """Applies the ``.ignore()`` method across all sub-conditions.
+
+        This impacts any dep-related sub-conditions.
+
+        Args:
+            selection (AssetSelection): The selection to ignore.
+        """
+        from dagster._core.definitions.asset_selection import AssetSelection
+
+        check.inst_param(selection, "selection", AssetSelection)
+        return copy(
+            self,
+            operands=[
+                child.ignore(selection) if _has_allow_ignore(child) else child
+                for child in self.operands
+            ],
         )
 
 
@@ -83,18 +179,82 @@ class OrAutomationCondition(BuiltinAutomationCondition[T_EntityKey]):
     def requires_cursor(self) -> bool:
         return False
 
-    def evaluate(self, context: AutomationContext[T_EntityKey]) -> AutomationResult[T_EntityKey]:
-        child_results: List[AutomationResult] = []
+    async def evaluate(
+        self, context: AutomationContext[T_EntityKey]
+    ) -> AutomationResult[T_EntityKey]:
         true_subset = context.get_empty_subset()
-        for i, child in enumerate(self.children):
-            child_context = context.for_child_condition(
+
+        coroutines = [
+            context.for_child_condition(
                 child_condition=child, child_index=i, candidate_subset=context.candidate_subset
-            )
-            child_result = child.evaluate(child_context)
-            child_results.append(child_result)
+            ).evaluate_async()
+            for i, child in enumerate(self.children)
+        ]
+
+        child_results = await asyncio.gather(*coroutines)
+        for child_result in child_results:
             true_subset = true_subset.compute_union(child_result.true_subset)
 
         return AutomationResult(context, true_subset, child_results=child_results)
+
+    @public
+    def replace(
+        self, old: Union[AutomationCondition, str], new: AutomationCondition
+    ) -> AutomationCondition:
+        """Replaces all instances of ``old`` across any sub-conditions with ``new``.
+
+        If ``old`` is a string, then conditions with a label matching
+        that string will be replaced.
+
+        Args:
+            old (Union[AutomationCondition, str]): The condition to replace.
+            new (AutomationCondition): The condition to replace with.
+        """
+        return (
+            new
+            if old in [self, self.get_label()]
+            else copy(self, operands=[child.replace(old, new) for child in self.operands])
+        )
+
+    @public
+    def allow(self, selection: "AssetSelection") -> "OrAutomationCondition":
+        """Applies the ``.allow()`` method across all sub-conditions.
+
+        This impacts any dep-related sub-conditions.
+
+        Args:
+            selection (AssetSelection): The selection to allow.
+        """
+        from dagster._core.definitions.asset_selection import AssetSelection
+
+        check.inst_param(selection, "selection", AssetSelection)
+        return copy(
+            self,
+            operands=[
+                child.allow(selection) if _has_allow_ignore(child) else child
+                for child in self.operands
+            ],
+        )
+
+    @public
+    def ignore(self, selection: "AssetSelection") -> "OrAutomationCondition":
+        """Applies the ``.ignore()`` method across all sub-conditions.
+
+        This impacts any dep-related sub-conditions.
+
+        Args:
+            selection (AssetSelection): The selection to ignore.
+        """
+        from dagster._core.definitions.asset_selection import AssetSelection
+
+        check.inst_param(selection, "selection", AssetSelection)
+        return copy(
+            self,
+            operands=[
+                child.ignore(selection) if _has_allow_ignore(child) else child
+                for child in self.operands
+            ],
+        )
 
 
 @whitelist_for_serdes(storage_name="NotAssetCondition")
@@ -116,11 +276,69 @@ class NotAutomationCondition(BuiltinAutomationCondition[T_EntityKey]):
     def children(self) -> Sequence[AutomationCondition[T_EntityKey]]:
         return [self.operand]
 
-    def evaluate(self, context: AutomationContext[T_EntityKey]) -> AutomationResult[T_EntityKey]:
-        child_context = context.for_child_condition(
+    async def evaluate(
+        self, context: AutomationContext[T_EntityKey]
+    ) -> AutomationResult[T_EntityKey]:
+        child_result = await context.for_child_condition(
             child_condition=self.operand, child_index=0, candidate_subset=context.candidate_subset
-        )
-        child_result = self.operand.evaluate(child_context)
+        ).evaluate_async()
         true_subset = context.candidate_subset.compute_difference(child_result.true_subset)
 
         return AutomationResult(context, true_subset, child_results=[child_result])
+
+    @public
+    def replace(
+        self, old: Union[AutomationCondition, str], new: AutomationCondition
+    ) -> AutomationCondition:
+        """Replaces all instances of ``old`` across any sub-conditions with ``new``.
+
+        If ``old`` is a string, then conditions with a label matching
+        that string will be replaced.
+
+        Args:
+            old (Union[AutomationCondition, str]): The condition to replace.
+            new (AutomationCondition): The condition to replace with.
+        """
+        return (
+            new
+            if old in [self, self.get_label()]
+            else copy(self, operand=self.operand.replace(old, new))
+        )
+
+    @public
+    def allow(self, selection: "AssetSelection") -> "NotAutomationCondition":
+        """Applies the ``.allow()`` method across all sub-conditions.
+
+        This impacts any dep-related sub-conditions.
+
+        Args:
+            selection (AssetSelection): The selection to allow.
+        """
+        from dagster._core.definitions.asset_selection import AssetSelection
+
+        check.inst_param(selection, "selection", AssetSelection)
+        return copy(
+            self,
+            operand=self.operand.allow(selection)
+            if _has_allow_ignore(self.operand)
+            else self.operand,
+        )
+
+    @public
+    def ignore(self, selection: "AssetSelection") -> "NotAutomationCondition":
+        """Applies the ``.ignore()`` method across all sub-conditions.
+
+        This impacts any dep-related sub-conditions.
+
+        Args:
+            selection (AssetSelection): The selection to ignore.
+        """
+        from dagster._core.definitions.asset_selection import AssetSelection
+
+        check.inst_param(selection, "selection", AssetSelection)
+        return copy(
+            self,
+            operand=self.operand.ignore(selection)
+            if _has_allow_ignore(self.operand)
+            else self.operand,
+        )
