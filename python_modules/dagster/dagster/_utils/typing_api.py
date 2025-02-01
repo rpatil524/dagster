@@ -52,12 +52,7 @@ def is_closed_python_list_type(ttype):
     origin = get_origin(ttype)
     args = get_args(ttype)
 
-    return (
-        origin is list
-        and args != ()
-        # py3.7 compat
-        and type(args[0]) != typing.TypeVar
-    )
+    return origin is list and args != ()
 
 
 def is_closed_python_dict_type(ttype):
@@ -73,13 +68,7 @@ def is_closed_python_dict_type(ttype):
     origin = get_origin(ttype)
     args = get_args(ttype)
 
-    return (
-        origin is dict
-        and args != ()
-        # py3.7 compat
-        and type(args[0]) != typing.TypeVar
-        and type(args[1]) != typing.TypeVar
-    )
+    return origin is dict and args != ()
 
 
 def is_closed_python_tuple_type(ttype):
@@ -107,12 +96,7 @@ def is_closed_python_set_type(ttype):
     origin = get_origin(ttype)
     args = get_args(ttype)
 
-    return (
-        origin is set
-        and args != ()
-        # py3.7 compat
-        and type(args[0]) != typing.TypeVar
-    )
+    return origin is set and args != ()
 
 
 def get_optional_inner_type(ttype):
@@ -150,14 +134,14 @@ def is_typing_type(ttype):
         or is_closed_python_set_type(ttype)
         or is_closed_python_tuple_type(ttype)
         or is_closed_python_list_type(ttype)
-        or ttype is typing.Tuple
-        or ttype is typing.Set
-        or ttype is typing.Dict
-        or ttype is typing.List
+        or ttype is typing.Tuple  # noqa: UP006
+        or ttype is typing.Set  # noqa: UP006
+        or ttype is typing.Dict  # noqa: UP006
+        or ttype is typing.List  # noqa: UP006
     )
 
 
-def flatten_unions(ttype: typing.Type) -> typing.AbstractSet[typing.Type]:
+def flatten_unions(ttype: type) -> typing.AbstractSet[type]:
     """Accepts a type that may be a Union of other types, and returns those other types.
     In addition to explicit Union annotations, works for Optional, which is represented as
     Union[T, None] under the covers.
@@ -167,7 +151,7 @@ def flatten_unions(ttype: typing.Type) -> typing.AbstractSet[typing.Type]:
     return set(_flatten_unions_inner(ttype))
 
 
-def _flatten_unions_inner(ttype: typing.Type) -> typing.Iterable[typing.Type]:
+def _flatten_unions_inner(ttype: type) -> typing.Iterable[type]:
     if get_origin(ttype) is typing.Union:
         for arg in get_args(ttype):
             yield from flatten_unions(arg)

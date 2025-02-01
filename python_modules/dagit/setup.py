@@ -6,7 +6,7 @@ from setuptools import find_packages, setup
 
 def long_description():
     here = os.path.abspath(os.path.dirname(__file__))
-    with open(os.path.join(here, "README.rst"), "r", encoding="utf8") as fh:
+    with open(os.path.join(here, "README.rst"), encoding="utf8") as fh:
         return fh.read()
 
 
@@ -32,7 +32,6 @@ setup(
     long_description_content_type="text/markdown",
     url="https://github.com/dagster-io/dagster",
     classifiers=[
-        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
@@ -42,7 +41,7 @@ setup(
     ],
     packages=find_packages(exclude=["dagit_tests*"]),
     include_package_data=True,
-    python_requires=">=3.8,<3.13",
+    python_requires=">=3.9,<3.13",
     install_requires=[
         f"dagster-webserver{pin}",
     ],

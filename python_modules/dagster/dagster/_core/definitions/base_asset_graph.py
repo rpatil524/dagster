@@ -1,23 +1,16 @@
 from abc import ABC, abstractmethod
 from collections import defaultdict, deque
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from datetime import datetime
 from functools import cached_property, total_ordering
 from heapq import heapify, heappop, heappush
-from typing import (
+from typing import (  # noqa: UP035
     TYPE_CHECKING,
     AbstractSet,
     Callable,
-    Dict,
     Generic,
-    Iterable,
-    Iterator,
-    List,
-    Mapping,
     NamedTuple,
     Optional,
-    Sequence,
-    Set,
-    Tuple,
     TypeVar,
     Union,
     cast,
@@ -144,6 +137,10 @@ class BaseAssetNode(BaseEntityNode[AssetKey]):
 
     @property
     @abstractmethod
+    def pools(self) -> Optional[set[str]]: ...
+
+    @property
+    @abstractmethod
     def owners(self) -> Sequence[str]: ...
 
     @property
@@ -236,7 +233,10 @@ class BaseAssetGraph(ABC, Generic[T_AssetNode]):
 
     @property
     def nodes(self) -> Iterable[BaseEntityNode]:
-        return [*self._asset_nodes_by_key.values(), *self._asset_check_nodes_by_key.values()]
+        return [
+            *self._asset_nodes_by_key.values(),
+            *self._asset_check_nodes_by_key.values(),
+        ]
 
     def has(self, key: EntityKey) -> bool:
         return key in self._asset_nodes_by_key or key in self._asset_check_nodes_by_key
@@ -267,8 +267,7 @@ class BaseAssetGraph(ABC, Generic[T_AssetNode]):
             "downstream": {node.key: node.child_entity_keys for node in self.nodes},
         }
 
-    @property
-    def all_asset_keys(self) -> AbstractSet[AssetKey]:
+    def get_all_asset_keys(self) -> AbstractSet[AssetKey]:
         return set(self._asset_nodes_by_key)
 
     @cached_property
@@ -345,17 +344,28 @@ class BaseAssetGraph(ABC, Generic[T_AssetNode]):
     def root_executable_asset_keys(self) -> AbstractSet[AssetKey]:
         """Executable asset keys that have no executable parents."""
         return fetch_sources(
-            self.asset_dep_graph, self.observable_asset_keys | self.materializable_asset_keys
+            self,
+            self.observable_asset_keys | self.materializable_asset_keys,
         )
 
     @property
     @abstractmethod
     def asset_check_keys(self) -> AbstractSet[AssetCheckKey]: ...
 
+    def get_check_keys_for_assets(
+        self, asset_keys: AbstractSet[AssetKey]
+    ) -> AbstractSet[AssetCheckKey]:
+        return {
+            asset_check_key
+            for asset_check_key in self.asset_check_keys
+            if asset_check_key.asset_key in asset_keys
+        }
+
     @cached_property
     def all_partitions_defs(self) -> Sequence[PartitionsDefinition]:
         return sorted(
-            set(node.partitions_def for node in self.asset_nodes if node.partitions_def), key=repr
+            set(node.partitions_def for node in self.asset_nodes if node.partitions_def),
+            key=repr,
         )
 
     @cached_property
@@ -425,7 +435,7 @@ class BaseAssetGraph(ABC, Generic[T_AssetNode]):
         """Returns every partition in every of the given asset's children that depends on the given
         partition of that asset.
         """
-        result: Set[AssetKeyPartitionKey] = set()
+        result: set[AssetKeyPartitionKey] = set()
         for child in self.get_children(self.get(asset_key)):
             if child.is_partitioned:
                 for child_partition_key in self.get_child_partition_keys_of_parent(
@@ -501,8 +511,8 @@ class BaseAssetGraph(ABC, Generic[T_AssetNode]):
         """Returns every partition in every of the given asset's parents that the given partition of
         that asset depends on.
         """
-        valid_parent_partitions: Set[AssetKeyPartitionKey] = set()
-        required_but_nonexistent_parent_partitions: Set[AssetKeyPartitionKey] = set()
+        valid_parent_partitions: set[AssetKeyPartitionKey] = set()
+        required_but_nonexistent_parent_partitions: set[AssetKeyPartitionKey] = set()
         for parent_asset_key in self.get(asset_key).parent_keys:
             if self.has(parent_asset_key) and self.get(parent_asset_key).is_partitioned:
                 mapped_partitions_result = self.get_parent_partition_keys_for_child(
@@ -522,7 +532,7 @@ class BaseAssetGraph(ABC, Generic[T_AssetNode]):
                 required_but_nonexistent_parent_partitions.update(
                     {
                         AssetKeyPartitionKey(parent_asset_key, invalid_partition)
-                        for invalid_partition in mapped_partitions_result.required_but_nonexistent_partition_keys
+                        for invalid_partition in mapped_partitions_result.required_but_nonexistent_subset.get_partition_keys()
                     }
                 )
             else:
@@ -604,7 +614,7 @@ class BaseAssetGraph(ABC, Generic[T_AssetNode]):
 
     def upstream_key_iterator(self, asset_key: AssetKey) -> Iterator[AssetKey]:
         """Iterates through all asset keys which are upstream of the given key."""
-        visited: Set[AssetKey] = set()
+        visited: set[AssetKey] = set()
         queue = deque([asset_key])
         while queue:
             current_key = queue.popleft()
@@ -674,12 +684,13 @@ class BaseAssetGraph(ABC, Generic[T_AssetNode]):
 
         all_assets = set(initial_subset.asset_keys)
         check.invariant(
-            len(initial_subset.asset_keys) == 1, "Multiple initial assets not yet supported"
+            len(initial_subset.asset_keys) == 1,
+            "Multiple initial assets not yet supported",
         )
         initial_asset_key = next(iter(initial_subset.asset_keys))
         queue = deque([initial_asset_key])
 
-        queued_subsets_by_asset_key: Dict[AssetKey, Optional[PartitionsSubset]] = {
+        queued_subsets_by_asset_key: dict[AssetKey, Optional[PartitionsSubset]] = {
             initial_asset_key: (
                 initial_subset.get_partitions_subset(initial_asset_key, self)
                 if self.get(initial_asset_key).is_partitioned
@@ -744,12 +755,14 @@ class BaseAssetGraph(ABC, Generic[T_AssetNode]):
         self,
         dynamic_partitions_store: DynamicPartitionsStore,
         condition_fn: Callable[
-            [Iterable[AssetKeyPartitionKey], AbstractSet[AssetKeyPartitionKey]], Tuple[bool, str]
+            [Iterable[AssetKeyPartitionKey], AbstractSet[AssetKeyPartitionKey]],
+            tuple[bool, str],
         ],
         initial_asset_partitions: Iterable[AssetKeyPartitionKey],
         evaluation_time: datetime,
-    ) -> Tuple[
-        AbstractSet[AssetKeyPartitionKey], Sequence[Tuple[Iterable[AssetKeyPartitionKey], str]]
+    ) -> tuple[
+        AbstractSet[AssetKeyPartitionKey],
+        Sequence[tuple[Iterable[AssetKeyPartitionKey], str]],
     ]:
         """Returns asset partitions within the graph that satisfy supplied criteria.
 
@@ -774,8 +787,8 @@ class BaseAssetGraph(ABC, Generic[T_AssetNode]):
         # invariant: we never consider an asset partition before considering its ancestors
         queue = ToposortedPriorityQueue(self, all_nodes, include_full_execution_set=True)
 
-        result: Set[AssetKeyPartitionKey] = set()
-        failed_reasons: List[Tuple[Iterable[AssetKeyPartitionKey], str]] = []
+        result: set[AssetKeyPartitionKey] = set()
+        failed_reasons: list[tuple[Iterable[AssetKeyPartitionKey], str]] = []
 
         while len(queue) > 0:
             candidates_unit = queue.dequeue()

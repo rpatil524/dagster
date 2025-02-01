@@ -12,30 +12,30 @@ import * as React from 'react';
 import {Link} from 'react-router-dom';
 import styled from 'styled-components';
 
-import {CreatedByTagCell, CreatedByTagCellWrapper} from './CreatedByTag';
+import {CreatedByTagCell} from './CreatedByTag';
 import {QueuedRunCriteriaDialog} from './QueuedRunCriteriaDialog';
-import {RUN_ACTIONS_MENU_RUN_FRAGMENT, RunActionsMenu} from './RunActionsMenu';
+import {RunActionsMenu} from './RunActionsMenu';
 import {RunRowTags} from './RunRowTags';
 import {RunStatusTag, RunStatusTagWithStats} from './RunStatusTag';
 import {DagsterTag} from './RunTag';
+import {RunTags} from './RunTags';
 import {RunTargetLink} from './RunTargetLink';
 import {RunStateSummary, RunTime, titleForRun} from './RunUtils';
 import {getBackfillPath} from './RunsFeedUtils';
 import {RunFilterToken} from './RunsFilterInput';
-import {gql} from '../apollo-client';
 import {RunTimeFragment} from './types/RunUtils.types';
-import {RunsFeedTableEntryFragment} from './types/RunsFeedRow.types';
+import {RunsFeedTableEntryFragment} from './types/RunsFeedTableEntryFragment.types';
 import {RunStatus} from '../graphql/types';
-import {BackfillActionsMenu, backfillCanCancelRuns} from '../instance/backfill/BackfillActionsMenu';
-import {BACKFILL_STEP_STATUS_DIALOG_BACKFILL_FRAGMENT} from '../instance/backfill/BackfillFragments';
+import {BackfillActionsMenu} from '../instance/backfill/BackfillActionsMenu';
 import {BackfillTarget} from '../instance/backfill/BackfillRow';
-import {PARTITION_SET_FOR_BACKFILL_TABLE_FRAGMENT} from '../instance/backfill/BackfillTable';
 import {HeaderCell, HeaderRow, RowCell} from '../ui/VirtualizedTable';
 import {appendCurrentQueryParams} from '../util/appendCurrentQueryParams';
+import {buildRepoAddress} from '../workspace/buildRepoAddress';
 
 export const RunsFeedRow = ({
   entry,
   onAddTag,
+  onShowPartitions,
   checked,
   onToggleChecked,
   refetch,
@@ -43,6 +43,7 @@ export const RunsFeedRow = ({
 }: {
   entry: RunsFeedTableEntryFragment;
   refetch: () => void;
+  onShowPartitions: () => void;
   onAddTag?: (token: RunFilterToken) => void;
   checked?: boolean;
   onToggleChecked?: (values: {checked: boolean; shiftKey: boolean}) => void;
@@ -62,6 +63,16 @@ export const RunsFeedRow = ({
   };
 
   const isReexecution = entry.tags.some((tag) => tag.key === DagsterTag.ParentRunId);
+  const repoAddress = React.useMemo(
+    () =>
+      entry.__typename === 'Run' && entry.repositoryOrigin
+        ? buildRepoAddress(
+            entry.repositoryOrigin.repositoryName,
+            entry.repositoryOrigin.repositoryLocationName,
+          )
+        : null,
+    [entry],
+  );
 
   const [showQueueCriteria, setShowQueueCriteria] = React.useState(false);
   const [isHovered, setIsHovered] = React.useState(false);
@@ -75,6 +86,9 @@ export const RunsFeedRow = ({
     status: entry.runStatus,
     __typename: 'Run',
   };
+
+  const partitionTag =
+    entry.__typename === 'Run' ? entry.tags.find((t) => t.key === DagsterTag.Partition) : null;
 
   return (
     <RowGrid
@@ -104,12 +118,17 @@ export const RunsFeedRow = ({
             flex={{direction: 'row', alignItems: 'center', wrap: 'wrap'}}
             style={{gap: '4px 8px', lineHeight: 0}}
           >
+            {entry.__typename === 'PartitionBackfill' ? (
+              <Tag intent="none">Backfill</Tag>
+            ) : undefined}
+
             <RunRowTags
               run={{...entry, mode: 'default'}}
               isJob={true}
               isHovered={isHovered}
               onAddTag={onAddTag}
               hideTags={hideTags}
+              hidePartition
             />
 
             {entry.runStatus === RunStatus.QUEUED ? (
@@ -128,22 +147,29 @@ export const RunsFeedRow = ({
         </Box>
       </RowCell>
       <RowCell style={{flexDirection: 'row', alignItems: 'flex-start'}}>
-        <Tag>
-          <Box flex={{direction: 'row', gap: 4}}>
-            {entry.__typename === 'Run' ? (
-              <RunTargetLink
-                isJob={true}
-                run={{...entry, pipelineName: entry.jobName!, stepKeysToExecute: []}}
-                repoAddress={null}
-              />
-            ) : (
-              <BackfillTarget backfill={entry} repoAddress={null} />
-            )}
-          </Box>
-        </Tag>
+        {entry.__typename === 'Run' ? (
+          <RunTargetLink
+            isJob={true}
+            run={{...entry, pipelineName: entry.jobName!, stepKeysToExecute: []}}
+            repoAddress={repoAddress}
+            useTags={true}
+            extraTags={
+              partitionTag
+                ? [<RunTags key="partition" tags={[partitionTag]} onAddTag={onAddTag} />]
+                : []
+            }
+          />
+        ) : (
+          <BackfillTarget
+            backfill={entry}
+            repoAddress={null}
+            useTags={true}
+            onShowPartitions={onShowPartitions}
+          />
+        )}
       </RowCell>
       <RowCell>
-        <CreatedByTagCell tags={entry.tags || []} onAddTag={onAddTag} />
+        <CreatedByTagCell tags={entry.tags || []} onAddTag={onAddTag} repoAddress={repoAddress} />
       </RowCell>
       <RowCell>
         <div>
@@ -169,7 +195,6 @@ export const RunsFeedRow = ({
         {entry.__typename === 'PartitionBackfill' ? (
           <BackfillActionsMenu
             backfill={{...entry, status: entry.backfillStatus}}
-            canCancelRuns={backfillCanCancelRuns(entry, entry.numCancelable > 0)}
             refetch={refetch}
             anchorLabel="View"
           />
@@ -187,7 +212,7 @@ export const RunsFeedRow = ({
 };
 
 const TEMPLATE_COLUMNS =
-  '60px minmax(0, 2fr) minmax(0, 2fr) minmax(0, 1fr) 140px 150px 120px 132px';
+  '60px minmax(0, 1.5fr) minmax(0, 1.2fr) minmax(0, 1fr) 140px 170px 120px 132px';
 
 export const RunsFeedTableHeader = ({checkbox}: {checkbox: React.ReactNode}) => {
   return (
@@ -210,66 +235,4 @@ const RowGrid = styled(Box)`
   display: grid;
   grid-template-columns: ${TEMPLATE_COLUMNS};
   height: 100%;
-  .bp5-popover-target {
-    display: block;
-  }
-  ${CreatedByTagCellWrapper} {
-    display: block;
-  }
-`;
-
-export const RUNS_FEED_TABLE_ENTRY_FRAGMENT = gql`
-  fragment RunsFeedTableEntryFragment on RunsFeedEntry {
-    __typename
-    id
-    runStatus
-    creationTime
-    startTime
-    endTime
-    tags {
-      key
-      value
-    }
-    jobName
-    assetSelection {
-      ... on AssetKey {
-        path
-      }
-    }
-    assetCheckSelection {
-      name
-      assetKey {
-        path
-      }
-    }
-    ... on Run {
-      repositoryOrigin {
-        id
-        repositoryLocationName
-        repositoryName
-      }
-      ...RunActionsMenuRunFragment
-    }
-    ... on PartitionBackfill {
-      backfillStatus: status
-      partitionSetName
-      partitionSet {
-        id
-        ...PartitionSetForBackfillTableFragment
-      }
-      assetSelection {
-        path
-      }
-
-      hasCancelPermission
-      hasResumePermission
-      isAssetBackfill
-      numCancelable
-      ...BackfillStepStatusDialogBackfillFragment
-    }
-  }
-
-  ${RUN_ACTIONS_MENU_RUN_FRAGMENT}
-  ${PARTITION_SET_FOR_BACKFILL_TABLE_FRAGMENT}
-  ${BACKFILL_STEP_STATUS_DIALOG_BACKFILL_FRAGMENT}
 `;

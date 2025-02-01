@@ -1,9 +1,9 @@
 import enum
-import sys
 from abc import ABC, abstractmethod
-from typing import List, Mapping, Optional
+from collections.abc import Mapping
+from typing import Optional
+from unittest import mock
 
-import mock
 import pytest
 from dagster import (
     AssetExecutionContext,
@@ -35,6 +35,7 @@ from dagster._utils.cached_method import cached_method
 from pydantic import (
     Field as PyField,
     ValidationError,
+    create_model,
 )
 
 
@@ -100,7 +101,6 @@ def test_invalid_config() -> None:
         MyResource(foo="why")  # type: ignore
 
 
-@pytest.mark.skipif(sys.version_info < (3, 8), reason="requires python3.8")
 def test_caching_within_resource():
     called = {"greeting": 0, "get_introduction": 0}
 
@@ -194,7 +194,7 @@ def test_abc_resource():
 
     # Can't instantiate abstract class
     with pytest.raises(TypeError):
-        Writer()
+        Writer()  # pyright: ignore[reportAbstractUsage]
 
     @job(resource_defs={"writer": PrefixedWriterResource(prefix="greeting: ")})
     def prefixed_job():
@@ -519,7 +519,7 @@ def test_resources_which_return():
     assert completed["yes"]
 
     str_resource_partial = StringResource.configure_at_launch()
-    my_resource = MyResource(string_from_resource=str_resource_partial)
+    my_resource = MyResource(string_from_resource=str_resource_partial)  # pyright: ignore[reportArgumentType]
 
     defs = Definitions(
         assets=[my_asset],
@@ -555,7 +555,7 @@ def test_nested_config_class() -> None:
         age: int
 
     class UsersResource(ConfigurableResource):
-        users: List[User]
+        users: list[User]
 
     executed = {}
 
@@ -583,6 +583,44 @@ def test_nested_config_class() -> None:
 
     assert defs.get_implicit_global_asset_job_def().execute_in_process().success
     assert executed["yes"]
+
+
+# https://github.com/dagster-io/dagster/issues/27223
+@pytest.mark.parametrize("child_resource_fields_all_have_default_values", [True, False])
+def test_nested_config_class_with_runtime_config(
+    child_resource_fields_all_have_default_values: bool,
+) -> None:
+    # Type hinting a dynamically-generated Pydantic model is impossible:
+    # https://stackoverflow.com/q/78838473
+    ChildResource = create_model(
+        "ChildResource",
+        date=(str, "2025-01-20" if child_resource_fields_all_have_default_values else ...),
+        __base__=ConfigurableResource,
+    )
+
+    class ParentResource(ConfigurableResource):
+        child: ChildResource  # pyright: ignore[reportInvalidTypeForm]
+
+    @asset
+    def test_asset(
+        child: ChildResource,  # pyright: ignore[reportInvalidTypeForm]
+        parent: ParentResource,
+    ) -> None:
+        assert child.date == "2025-01-21"
+        assert parent.child.date == "2025-01-21"
+
+    child = ChildResource.configure_at_launch()
+    materialize(
+        [test_asset],
+        resources={
+            "child": child,
+            "parent": ParentResource.configure_at_launch(child=child),
+        },
+        run_config={
+            "loggers": {"console": {"config": {"log_level": "ERROR"}}},
+            "resources": {"child": {"config": {"date": "2025-01-21"}}},
+        },
+    )
 
 
 def test_using_enum_simple() -> None:
@@ -638,7 +676,7 @@ def test_using_enum_complex() -> None:
         BAR = "bar"
 
     class MyResource(ConfigurableResource):
-        list_of_enums: List[MyEnum]
+        list_of_enums: list[MyEnum]
         optional_enum: Optional[MyEnum] = None
 
     @asset
@@ -854,8 +892,8 @@ def test_from_resource_context_and_to_config_field() -> None:
 def test_from_resource_context_and_to_config_field_complex() -> None:
     class MyComplexConfigResource(ConfigurableResource):
         a_string: str
-        a_list_of_ints: List[int]
-        a_map_of_lists_of_maps_of_floats: Mapping[str, List[Mapping[str, float]]]
+        a_list_of_ints: list[int]
+        a_map_of_lists_of_maps_of_floats: Mapping[str, list[Mapping[str, float]]]
 
     @resource(config_schema=MyComplexConfigResource.to_config_schema())
     def complex_config_resource_function_style(

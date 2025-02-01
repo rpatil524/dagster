@@ -7,8 +7,10 @@ import sqlite3
 import threading
 import time
 from collections import defaultdict
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, ContextManager, Iterator, Optional, Sequence, Union
+from functools import cached_property
+from typing import TYPE_CHECKING, Any, ContextManager, Optional, Union  # noqa: UP035
 
 import sqlalchemy as db
 import sqlalchemy.exc as db_exc
@@ -45,10 +47,14 @@ from dagster._core.storage.sql import (
     create_engine,
     get_alembic_config,
     run_alembic_upgrade,
+    safe_commit,
     stamp_alembic_rev,
 )
 from dagster._core.storage.sqlalchemy_compat import db_select
-from dagster._core.storage.sqlite import create_db_conn_string
+from dagster._core.storage.sqlite import (
+    LAST_KNOWN_STAMPED_SQLITE_ALEMBIC_REVISION,
+    create_db_conn_string,
+)
 from dagster._serdes import ConfigurableClass, ConfigurableClassData
 from dagster._serdes.errors import DeserializationError
 from dagster._serdes.serdes import deserialize_value
@@ -106,7 +112,7 @@ class SqliteEventLogStorage(SqlEventLogStorage, ConfigurableClass):
         if not os.path.exists(self.path_for_shard(INDEX_SHARD_NAME)):
             conn_string = self.conn_string_for_shard(INDEX_SHARD_NAME)
             engine = create_engine(conn_string, poolclass=NullPool)
-            self._initdb(engine)
+            self._initdb(engine, for_index_shard=True)
             self.reindex_events()
             self.reindex_assets()
 
@@ -162,7 +168,7 @@ class SqliteEventLogStorage(SqlEventLogStorage, ConfigurableClass):
         check.str_param(shard_name, "shard_name")
         return create_db_conn_string(self._base_dir, shard_name)
 
-    def _initdb(self, engine: Engine) -> None:
+    def _initdb(self, engine: Engine, for_index_shard=False) -> None:
         alembic_config = get_alembic_config(__file__)
 
         retry_limit = 10
@@ -173,9 +179,19 @@ class SqliteEventLogStorage(SqlEventLogStorage, ConfigurableClass):
                     db_revision, head_revision = check_alembic_revision(alembic_config, connection)
 
                     if not (db_revision and head_revision):
+                        table_names = db.inspect(engine).get_table_names()
+                        if "event_logs" in table_names and for_index_shard:
+                            # The event_log table exists but the alembic version table does not. This means that the SQLite db was
+                            # initialized with SQLAlchemy 2.0 before https://github.com/dagster-io/dagster/pull/25740 was merged.
+                            # We should pin the alembic revision to the last known stamped revision before we unpinned SQLAlchemy 2.0
+                            # This should be safe because we have guarded all known migrations since then.
+                            rev_to_stamp = LAST_KNOWN_STAMPED_SQLITE_ALEMBIC_REVISION
+                        else:
+                            rev_to_stamp = "head"
                         SqlEventLogStorageMetadata.create_all(engine)
                         connection.execute(db.text("PRAGMA journal_mode=WAL;"))
-                        stamp_alembic_rev(alembic_config, connection)
+                        stamp_alembic_rev(alembic_config, connection, rev=rev_to_stamp)
+                        safe_commit(connection)
 
                 break
             except (db_exc.DatabaseError, sqlite3.DatabaseError, sqlite3.OperationalError) as exc:
@@ -291,7 +307,7 @@ class SqliteEventLogStorage(SqlEventLogStorage, ConfigurableClass):
         if is_asset_query:
             # asset materializations, observations and materialization planned events
             # get mirrored into the index shard, so no custom run shard-aware cursor logic needed
-            return super(SqliteEventLogStorage, self).get_event_records(
+            return super().get_event_records(
                 event_records_filter=event_records_filter, limit=limit, ascending=ascending
             )
 
@@ -397,7 +413,7 @@ class SqliteEventLogStorage(SqlEventLogStorage, ConfigurableClass):
 
         before_cursor, after_cursor = EventRecordsFilter.get_cursor_params(cursor, ascending)
         event_records_filter = (
-            records_filter.to_event_records_filter(cursor, ascending)
+            records_filter.to_event_records_filter_without_job_names(cursor, ascending)
             if isinstance(records_filter, RunStatusChangeRecordsFilter)
             else EventRecordsFilter(
                 event_type, before_cursor=before_cursor, after_cursor=after_cursor
@@ -407,7 +423,7 @@ class SqliteEventLogStorage(SqlEventLogStorage, ConfigurableClass):
         # bypass the run-sharded cursor logic... any caller of this run status change specific
         # method should be reading from the index shard, which as of 1.5.0 contains mirrored run
         # status change events
-        records = super(SqliteEventLogStorage, self).get_event_records(
+        records = super().get_event_records(
             event_records_filter=event_records_filter, limit=limit, ascending=ascending
         )
         if records:
@@ -418,17 +434,6 @@ class SqliteEventLogStorage(SqlEventLogStorage, ConfigurableClass):
             new_cursor = EventLogCursor.from_storage_id(-1).to_string()
         has_more = len(records) == limit
         return EventRecordsResult(records, cursor=new_cursor, has_more=has_more)
-
-    def supports_event_consumer_queries(self) -> bool:
-        return False
-
-    def delete_events(self, run_id: str) -> None:
-        with self.run_connection(run_id) as conn:
-            self.delete_events_for_run(conn, run_id)
-
-        # delete the mirrored event in the cross-run index database
-        with self.index_connection() as conn:
-            self.delete_events_for_run(conn, run_id)
 
     def wipe(self) -> None:
         # should delete all the run-sharded db files and drop the contents of the index
@@ -460,7 +465,7 @@ class SqliteEventLogStorage(SqlEventLogStorage, ConfigurableClass):
         # default implementation will update the event_logs in the sharded dbs, and the asset_key
         # table in the asset shard, but will not remove the mirrored event_log events in the asset
         # shard
-        super(SqliteEventLogStorage, self).wipe_asset(asset_key)
+        super().wipe_asset(asset_key)
         self._delete_mirrored_events_for_asset_key(asset_key)
 
     def watch(self, run_id: str, cursor: Optional[str], callback: EventHandlerFn) -> None:
@@ -494,9 +499,9 @@ class SqliteEventLogStorage(SqlEventLogStorage, ConfigurableClass):
     def is_run_sharded(self) -> bool:
         return True
 
-    @property
+    @cached_property
     def supports_global_concurrency_limits(self) -> bool:
-        return False
+        return self.has_table("concurrency_limits")
 
 
 class SqliteEventLogStorageWatchdog(PatternMatchingEventHandler):
@@ -515,7 +520,7 @@ class SqliteEventLogStorageWatchdog(PatternMatchingEventHandler):
         self._cb = check.callable_param(callback, "callback")
         self._log_path = event_log_storage.path_for_shard(run_id)
         self._cursor = cursor
-        super(SqliteEventLogStorageWatchdog, self).__init__(patterns=[self._log_path], **kwargs)
+        super().__init__(patterns=[self._log_path], **kwargs)
 
     def _process_log(self) -> None:
         connection = self._event_log_storage.get_records_for_run(self._run_id, self._cursor)

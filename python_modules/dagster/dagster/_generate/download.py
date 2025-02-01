@@ -11,11 +11,15 @@ from dagster._generate.generate import _should_skip_file
 # Examples aren't that can't be downloaded from the dagster project CLI
 EXAMPLES_TO_IGNORE = [
     "deploy_k8s_beta",
-    "docs_snippets",
     "docs_beta_snippets",
+    "docs_snippets",
     "experimental",
-    "temp_pins.txt",
     "use_case_repository",
+    "airlift-mwaa-example",
+    "starlift-demo",
+    "pyproject.toml",
+    "README.md",
+    "temp_pins.txt",
 ]
 # Hardcoded list of available examples. The list is tested against the examples folder in this mono
 # repo to make sure it's up-to-date.
@@ -33,21 +37,27 @@ AVAILABLE_EXAMPLES = [
     "feature_graph_backed_assets",
     "getting_started_etl_tutorial",
     "project_analytics",
+    "project_ask_ai_dagster",
+    "project_atproto_dashboard",
+    "project_dagster_modal_pipes",
     "project_dagster_university_start",
     "project_du_dbt_starter",
     "project_fully_featured",
+    "project_llm_fine_tune",
+    "project_prompt_eng",
     "quickstart_aws",
     "quickstart_etl",
     "quickstart_gcp",
     "quickstart_snowflake",
     "tutorial",
     "tutorial_notebook_assets",
-    "with_airflow",
     "with_great_expectations",
     "with_openai",
     "with_pyspark",
     "with_pyspark_emr",
     "with_wandb",
+    "airlift-federation-tutorial",
+    "airlift-migration-tutorial",
 ]
 
 

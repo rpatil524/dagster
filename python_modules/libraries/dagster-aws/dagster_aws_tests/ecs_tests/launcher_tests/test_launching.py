@@ -2,6 +2,7 @@ import copy
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 
 import pytest
 from botocore.exceptions import ClientError
@@ -384,6 +385,8 @@ def test_reuse_task_definition(instance, ecs):
         ],
         "cpu": "256",
         "memory": "512",
+        "taskRoleArn": "arn:aws:iam::12345:role/dagstertest-TaskRole-kQcbapXu8MZg",
+        "executionRoleArn": "arn:aws:iam::12345:role/dagstertest-ExecutionRole-kQcbapXu8MZg",
     }
 
     task_definition_config = DagsterEcsTaskDefinitionConfig.from_task_definition_dict(
@@ -462,7 +465,9 @@ def test_reuse_task_definition(instance, ecs):
 
     # Changed execution role fails
     task_definition = copy.deepcopy(original_task_definition)
-    task_definition["executionRoleArn"] = "new-role"
+    task_definition["executionRoleArn"] = (
+        "arn:aws:iam::12345:role/dagstertest-OtherExecutionRole-kQcbapXu8MZg"
+    )
     assert not instance.run_launcher._reuse_task_definition(  # noqa: SLF001
         DagsterEcsTaskDefinitionConfig.from_task_definition_dict(task_definition, container_name),
         container_name,
@@ -470,16 +475,18 @@ def test_reuse_task_definition(instance, ecs):
 
     # Changed task role fails
     task_definition = copy.deepcopy(original_task_definition)
-    task_definition["taskRoleArn"] = "new-role"
+    task_definition["taskRoleArn"] = (
+        "arn:aws:iam::12345:role/dagstertest-OtherTaskRole-kQcbapXu8MZg"
+    )
     assert not instance.run_launcher._reuse_task_definition(  # noqa: SLF001
         DagsterEcsTaskDefinitionConfig.from_task_definition_dict(task_definition, container_name),
         container_name,
     )
 
-    # Changed runtime platform fails
+    # Changed runtime platform does not fail
     task_definition = copy.deepcopy(original_task_definition)
     task_definition["runtimePlatform"] = {"operatingSystemFamily": "WINDOWS_SERVER_2019_FULL"}
-    assert not instance.run_launcher._reuse_task_definition(  # noqa: SLF001
+    assert instance.run_launcher._reuse_task_definition(  # noqa: SLF001
         DagsterEcsTaskDefinitionConfig.from_task_definition_dict(task_definition, container_name),
         container_name,
     )
@@ -498,12 +505,12 @@ def test_reuse_task_definition(instance, ecs):
         "capabilities": {"add": ["SYS_PTRACE"]},
         "initProcessEnabled": True,
     }
-    assert not instance.run_launcher._reuse_task_definition(  # noqa: SLF001
+    assert instance.run_launcher._reuse_task_definition(  # noqa: SLF001
         DagsterEcsTaskDefinitionConfig.from_task_definition_dict(task_definition, container_name),
         container_name,
     )
 
-    # Changed healthCheck fails
+    # Changed healthCheck does not fail
     task_definition = copy.deepcopy(original_task_definition)
     task_definition["containerDefinitions"][0]["healthCheck"] = {
         "command": ["CMD-SHELL", "curl -f http://localhost/ || exit 1"],
@@ -512,7 +519,7 @@ def test_reuse_task_definition(instance, ecs):
         "retries": 3,
         "startPeriod": 0,
     }
-    assert not instance.run_launcher._reuse_task_definition(  # noqa: SLF001
+    assert instance.run_launcher._reuse_task_definition(  # noqa: SLF001
         DagsterEcsTaskDefinitionConfig.from_task_definition_dict(task_definition, container_name),
         container_name,
     )
@@ -571,6 +578,24 @@ def test_reuse_task_definition(instance, ecs):
         container_name,
     )
 
+    # Matches if the only difference between the task role arns is that they remove the arn prefix
+    task_definition = copy.deepcopy(original_task_definition)
+    task_definition["taskRoleArn"] = "dagstertest-TaskRole-kQcbapXu8MZg"
+
+    assert instance.run_launcher._reuse_task_definition(  # noqa: SLF001
+        DagsterEcsTaskDefinitionConfig.from_task_definition_dict(task_definition, container_name),
+        container_name,
+    )
+
+    # Matches if the only difference between the execution role arns is that they remove the arn prefix
+    task_definition = copy.deepcopy(original_task_definition)
+    task_definition["executionRoleArn"] = "dagstertest-ExecutionRole-kQcbapXu8MZg"
+
+    assert instance.run_launcher._reuse_task_definition(  # noqa: SLF001
+        DagsterEcsTaskDefinitionConfig.from_task_definition_dict(task_definition, container_name),
+        container_name,
+    )
+
     # Fails if the existing task definition has a different container name
     task_definition = copy.deepcopy(original_task_definition)
     task_definition["containerDefinitions"][0]["name"] = "foobar"
@@ -582,6 +607,30 @@ def test_reuse_task_definition(instance, ecs):
         ),
         container_name,
     )
+
+
+def test_task_definition_prefix(ecs, instance_cm, run, workspace, job, remote_job):
+    with instance_cm(
+        {
+            "task_definition_prefix": "foo",
+        }
+    ) as instance:
+        initial_task_definitions = ecs.list_task_definitions()["taskDefinitionArns"]
+
+        run = instance.create_run_for_job(
+            job,
+            remote_job_origin=remote_job.get_remote_origin(),
+            job_code_origin=remote_job.get_python_origin(),
+        )
+        instance.launch_run(run.run_id, workspace)
+
+        task_definitions = ecs.list_task_definitions()["taskDefinitionArns"]
+        assert len(task_definitions) == len(initial_task_definitions) + 1
+        task_definition_arn = next(iter(set(task_definitions).difference(initial_task_definitions)))
+        task_definition = ecs.describe_task_definition(taskDefinition=task_definition_arn)
+        task_definition = task_definition["taskDefinition"]
+
+        assert task_definition["family"] == get_task_definition_family("foo", run.remote_job_origin)
 
 
 def test_default_task_definition_resources(ecs, instance_cm, run, workspace, job, remote_job):
@@ -835,9 +884,10 @@ def test_launching_custom_task_definition(ecs, instance_cm, run, workspace, job,
         print(instance.run_launcher)  # noqa: T201
 
     # The task definition doesn't include the container name
-    with pytest.raises(CheckError), instance_cm(
-        {"task_definition": family, "container_name": "does not exist"}
-    ) as instance:
+    with (
+        pytest.raises(CheckError),
+        instance_cm({"task_definition": family, "container_name": "does not exist"}) as instance,
+    ):
         print(instance.run_launcher)  # noqa: T201
 
     # You can provide a family or a task definition ARN
@@ -879,7 +929,7 @@ def test_eventual_consistency(ecs, instance, workspace, run, monkeypatch):
 
     retries = 0
     original_describe_tasks = instance.run_launcher.ecs.describe_tasks
-    original_backoff_retries = dagster_aws.ecs.tasks.BACKOFF_RETRIES
+    original_backoff_retries = dagster_aws.ecs.tasks.BACKOFF_RETRIES  # pyright: ignore[reportAttributeAccessIssue]
 
     def describe_tasks(*_args, **_kwargs):
         nonlocal retries
@@ -892,12 +942,12 @@ def test_eventual_consistency(ecs, instance, workspace, run, monkeypatch):
 
     with pytest.raises(EcsEventualConsistencyTimeout):
         monkeypatch.setattr(instance.run_launcher.ecs, "describe_tasks", describe_tasks)
-        monkeypatch.setattr(dagster_aws.ecs.tasks, "BACKOFF_RETRIES", 0)
+        monkeypatch.setattr(dagster_aws.ecs.tasks, "BACKOFF_RETRIES", 0)  # pyright: ignore[reportAttributeAccessIssue]
         instance.launch_run(run.run_id, workspace)
 
     # Reset the mock
     retries = 0
-    monkeypatch.setattr(dagster_aws.ecs.tasks, "BACKOFF_RETRIES", original_backoff_retries)
+    monkeypatch.setattr(dagster_aws.ecs.tasks, "BACKOFF_RETRIES", original_backoff_retries)  # pyright: ignore[reportAttributeAccessIssue]
     instance.launch_run(run.run_id, workspace)
 
     tasks = ecs.list_tasks()["taskArns"]
@@ -968,6 +1018,90 @@ def test_launch_cannot_use_system_tags(instance_cm, workspace, job, remote_job):
             job_code_origin=remote_job.get_python_origin(),
         )
         with pytest.raises(Exception, match="Cannot override system ECS tag: dagster/run_id"):
+            instance.launch_run(run.run_id, workspace)
+
+
+@pytest.mark.parametrize(
+    [
+        "run_tags",
+        "expected_ecs_tag_keys",
+        "allow_list",
+    ],
+    [
+        (
+            {
+                "dagster/partition_key": "abc",
+                "dagster/git_commit_hash": "b54e4ddfbf2f4f661cdb312b6f3dd49de6139c94",
+            },
+            {"dagster/run_id", "dagster/job_name"},
+            [],
+        ),
+        (
+            {
+                "dagster/partition_key": "abc",
+                "dagster/git_commit_hash": "b54e4ddfbf2f4f661cdb312b6f3dd49de6139c94",
+            },
+            {"dagster/partition_key", "dagster/job_name", "dagster/run_id"},
+            ["dagster/partition_key"],
+        ),
+    ],
+)
+def test_propagate_tags_include_all(
+    run_tags: dict[str, str],
+    expected_ecs_tag_keys: set[str],
+    allow_list: list[str],
+    instance_cm,
+    workspace,
+    job,
+    remote_job,
+    ecs,
+):
+    with instance_cm(
+        {
+            "propagate_tags": {
+                "allow_list": allow_list,
+            },
+        }
+    ) as instance:
+        run = instance.create_run_for_job(
+            job,
+            remote_job_origin=remote_job.get_remote_origin(),
+            job_code_origin=remote_job.get_python_origin(),
+        )
+        test_tags = {**run_tags, "ecs/memory": "30720", "ecs/cpu": "4096"}
+
+        instance.add_run_tags(run.run_id, test_tags)
+        instance.launch_run(run.run_id, workspace)
+
+        run_tags.update({"dagster/run_id": run.run_id})
+        initial_tasks = ecs.list_tasks()
+        tasks = ecs.describe_tasks(tasks=initial_tasks["taskArns"])
+        tags = tasks["tasks"][1]["tags"]
+        expected_ecs_tag_keys.add("dagster/run_id")
+        assert set([tag["key"] for tag in tags]) == expected_ecs_tag_keys
+
+
+@pytest.mark.parametrize(
+    ["propagate_tags"],
+    [
+        [{"allow_list": ["dagster/op_selection"]}],
+        [{"allow_list": ["dagster/solid_selection", "dagster/git_commit_hash"]}],
+    ],
+)
+def test_propagate_tags_args_validated(
+    instance_cm,
+    workspace,
+    job,
+    remote_job,
+    propagate_tags: dict[str, Any],
+):
+    with pytest.raises(CheckError):
+        with instance_cm({"propagate_tags": propagate_tags}) as instance:
+            run = instance.create_run_for_job(
+                job,
+                remote_job_origin=remote_job.get_remote_origin(),
+                job_code_origin=remote_job.get_python_origin(),
+            )
             instance.launch_run(run.run_id, workspace)
 
 
@@ -1240,7 +1374,7 @@ def test_overrides_too_long(
                 fn_name="foo",
             ),
             container_image="test:latest",
-            container_context=large_container_context,
+            container_context=large_container_context,  # pyright: ignore[reportArgumentType]
         ),
     )
 
@@ -1337,3 +1471,56 @@ def test_external_launch_type(
 
         assert task["taskDefinitionArn"] == task_definition["taskDefinitionArn"]
         assert task["launchType"] == "EXTERNAL"
+
+
+def test_removing_network_configuration(
+    ecs,
+    instance_cm,
+    workspace,
+    remote_job,
+    job,
+):
+    container_name = "external"
+
+    task_definition = ecs.register_task_definition(
+        family="external",
+        containerDefinitions=[{"name": container_name, "image": "dagster:first"}],
+        networkMode="bridge",
+        memory="512",
+        cpu="256",
+    )["taskDefinition"]
+
+    assert task_definition["networkMode"] == "bridge"
+    task_definition_arn = task_definition["taskDefinitionArn"]
+
+    # You can provide a family or a task definition ARN
+    with instance_cm(
+        {
+            "task_definition": task_definition_arn,
+            "container_name": container_name,
+            "run_task_kwargs": {"networkConfiguration": None},
+        }
+    ) as instance:
+        run = instance.create_run_for_job(
+            job,
+            remote_job_origin=remote_job.get_remote_origin(),
+            job_code_origin=remote_job.get_python_origin(),
+        )
+
+        initial_task_definitions = ecs.list_task_definitions()["taskDefinitionArns"]
+        initial_tasks = ecs.list_tasks()["taskArns"]
+
+        instance.launch_run(run.run_id, workspace)
+
+        # A new task definition is not created
+        assert ecs.list_task_definitions()["taskDefinitionArns"] == initial_task_definitions
+
+        # A new task is launched
+        tasks = ecs.list_tasks()["taskArns"]
+
+        assert len(tasks) == len(initial_tasks) + 1
+        task_arn = next(iter(set(tasks).difference(initial_tasks)))
+        task = ecs.describe_tasks(tasks=[task_arn])["tasks"][0]
+
+        assert task["taskDefinitionArn"] == task_definition["taskDefinitionArn"]
+        assert "networkConfiguration" not in task

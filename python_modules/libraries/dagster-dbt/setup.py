@@ -1,12 +1,11 @@
 from pathlib import Path
-from typing import Dict, Tuple
 
 from setuptools import find_packages, setup
 
 
-def get_version() -> Tuple[str, str]:
-    version: Dict[str, str] = {}
-    dbt_core_version: Dict[str, str] = {}
+def get_version() -> tuple[str, str]:
+    version: dict[str, str] = {}
+    dbt_core_version: dict[str, str] = {}
 
     with open(Path(__file__).parent / "dagster_dbt/version.py", encoding="utf8") as fp:
         exec(fp.read(), version)
@@ -29,7 +28,6 @@ setup(
     description="A Dagster integration for dbt",
     url="https://github.com/dagster-io/dagster/tree/master/python_modules/libraries/dagster-dbt",
     classifiers=[
-        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
@@ -39,7 +37,7 @@ setup(
     ],
     packages=find_packages(exclude=["dagster_dbt_tests*"]),
     include_package_data=True,
-    python_requires=">=3.8,<3.13",
+    python_requires=">=3.9,<3.13",
     install_requires=[
         f"dagster{pin}",
         # Follow the version support constraints for dbt Core: https://docs.getdbt.com/docs/dbt-versions/core
@@ -55,6 +53,7 @@ setup(
     ],
     extras_require={
         "test": [
+            "pytest-rerunfailures",
             "dbt-duckdb",
             "dagster-duckdb",
             "dagster-duckdb-pandas",

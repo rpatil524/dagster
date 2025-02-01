@@ -1,22 +1,9 @@
 import keyword
 import os
 import re
+from collections.abc import Iterable, Mapping, Sequence
 from glob import glob
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Dict,
-    Iterable,
-    List,
-    Mapping,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-    TypeVar,
-    Union,
-    cast,
-)
+from typing import TYPE_CHECKING, Any, Optional, TypeVar, Union, cast
 
 import yaml
 
@@ -63,14 +50,12 @@ MAX_TITLE_LENGTH = 100
 if TYPE_CHECKING:
     from dagster._core.definitions.asset_key import AssetKey
     from dagster._core.definitions.asset_selection import AssetSelection
-    from dagster._core.definitions.assets import AssetsDefinition
     from dagster._core.definitions.auto_materialize_policy import AutoMaterializePolicy
     from dagster._core.definitions.base_asset_graph import BaseAssetGraph
     from dagster._core.definitions.declarative_automation.automation_condition import (
         AutomationCondition,
     )
     from dagster._core.definitions.sensor_definition import SensorDefinition
-    from dagster._core.definitions.source_asset import SourceAsset
     from dagster._core.remote_representation.external import RemoteSensor
 
 
@@ -82,7 +67,7 @@ def has_valid_name_chars(name: str) -> bool:
     return bool(VALID_NAME_REGEX.match(name))
 
 
-def check_valid_name(name: str, allow_list: Optional[List[str]] = None) -> str:
+def check_valid_name(name: str, allow_list: Optional[list[str]] = None) -> str:
     check.str_param(name, "name")
 
     if allow_list and name in allow_list:
@@ -114,7 +99,7 @@ def is_valid_name(name: str) -> bool:
     return name not in DISALLOWED_NAMES and has_valid_name_chars(name)
 
 
-def is_valid_title_and_reason(title: Optional[str]) -> Tuple[bool, Optional[str]]:
+def is_valid_title_and_reason(title: Optional[str]) -> tuple[bool, Optional[str]]:
     check.opt_str_param(title, "title")
 
     if title is None:
@@ -224,7 +209,7 @@ def config_from_files(config_files: Sequence[str]) -> Mapping[str, Any]:
             f"loaded by file/patterns {config_files}."
         ) from err
 
-    return check.is_dict(cast(Dict[str, object], run_config), key_type=str)
+    return check.is_dict(cast(dict[str, object], run_config), key_type=str)
 
 
 def config_from_yaml_strings(yaml_strings: Sequence[str]) -> Mapping[str, Any]:
@@ -249,10 +234,10 @@ def config_from_yaml_strings(yaml_strings: Sequence[str]) -> Mapping[str, Any]:
             f"Encountered error attempting to parse yaml. Parsing YAMLs {yaml_strings} "
         ) from err
 
-    return check.is_dict(cast(Dict[str, object], run_config), key_type=str)
+    return check.is_dict(cast(dict[str, object], run_config), key_type=str)
 
 
-def config_from_pkg_resources(pkg_resource_defs: Sequence[Tuple[str, str]]) -> Mapping[str, Any]:
+def config_from_pkg_resources(pkg_resource_defs: Sequence[tuple[str, str]]) -> Mapping[str, Any]:
     """Load a run config from a package resource, using :py:func:`pkg_resources.resource_string`.
 
     Example:
@@ -322,32 +307,28 @@ def dedupe_object_refs(objects: Optional[Iterable[T]]) -> Sequence[T]:
     return list({id(obj): obj for obj in objects}.values()) if objects is not None else []
 
 
-def add_default_automation_condition_sensor(
+def get_default_automation_condition_sensor(
     sensors: Sequence["SensorDefinition"],
-    assets: Iterable[Union["AssetsDefinition", "SourceAsset"]],
-    asset_checks: Iterable["AssetsDefinition"],
-) -> Sequence["SensorDefinition"]:
+    asset_graph: "BaseAssetGraph",
+) -> Optional["SensorDefinition"]:
     """Given a list of existing sensors, adds an AutomationConditionSensorDefinition with name
     `default_automation_condition_sensor` that targets all assets/asset_checks that have an
     automation_condition and are not targeted by an existing AutomationConditionSensorDefinition
     if any such untargeted assets/asset_checks exist.
     """
-    from dagster._core.definitions.asset_graph import AssetGraph
     from dagster._core.definitions.automation_condition_sensor_definition import (
         DEFAULT_AUTOMATION_CONDITION_SENSOR_NAME,
         AutomationConditionSensorDefinition,
     )
 
     with disable_dagster_warnings():
-        asset_graph = AssetGraph.from_assets([*assets, *asset_checks])
         sensor_selection = get_default_automation_condition_sensor_selection(sensors, asset_graph)
         if sensor_selection:
-            default_sensor = AutomationConditionSensorDefinition(
-                DEFAULT_AUTOMATION_CONDITION_SENSOR_NAME, asset_selection=sensor_selection
+            return AutomationConditionSensorDefinition(
+                DEFAULT_AUTOMATION_CONDITION_SENSOR_NAME, target=sensor_selection
             )
-            sensors = [*sensors, default_sensor]
 
-    return sensors
+    return None
 
 
 def get_default_automation_condition_sensor_selection(
@@ -381,7 +362,7 @@ def get_default_automation_condition_sensor_selection(
             automation_condition_keys.add(k)
 
     # get the set of keys that are handled by an existing sensor
-    covered_keys: Set[EntityKey] = set()
+    covered_keys: set[EntityKey] = set()
     for sensor in automation_condition_sensors:
         selection = check.not_none(sensor.asset_selection)
         covered_keys = covered_keys.union(

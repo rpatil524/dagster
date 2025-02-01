@@ -1,22 +1,9 @@
 from collections import defaultdict
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from datetime import datetime
 from functools import cached_property
 from threading import RLock
-from typing import (
-    TYPE_CHECKING,
-    AbstractSet,
-    Callable,
-    Dict,
-    Iterable,
-    Iterator,
-    List,
-    Mapping,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-    Union,
-)
+from typing import TYPE_CHECKING, AbstractSet, Callable, Optional, Union  # noqa: UP035
 
 import dagster._check as check
 from dagster import AssetSelection
@@ -115,7 +102,7 @@ class RemoteRepository:
         self._instance = instance
 
         if repository_snap.job_datas is not None:
-            self._job_map: Dict[str, Union[JobDataSnap, JobRefSnap]] = {
+            self._job_map: dict[str, Union[JobDataSnap, JobRefSnap]] = {
                 d.name: d for d in repository_snap.job_datas
             }
             self._deferred_snapshots: bool = False
@@ -135,19 +122,19 @@ class RemoteRepository:
 
         self._handle = check.inst_param(repository_handle, "repository_handle", RepositoryHandle)
 
-        self._asset_jobs: Dict[str, List[AssetNodeSnap]] = {}
+        self._asset_jobs: dict[str, list[AssetNodeSnap]] = {}
         for asset_node in repository_snap.asset_nodes:
             for job_name in asset_node.job_names:
                 self._asset_jobs.setdefault(job_name, []).append(asset_node)
 
-        self._asset_check_jobs: Dict[str, List[AssetCheckNodeSnap]] = {}
+        self._asset_check_jobs: dict[str, list[AssetCheckNodeSnap]] = {}
         for asset_check_node_snap in repository_snap.asset_check_nodes or []:
             for job_name in asset_check_node_snap.job_names:
                 self._asset_check_jobs.setdefault(job_name, []).append(asset_check_node_snap)
 
         # memoize job instances to share instances
         self._memo_lock: RLock = RLock()
-        self._cached_jobs: Dict[str, RemoteJob] = {}
+        self._cached_jobs: dict[str, RemoteJob] = {}
 
     @property
     def name(self) -> str:
@@ -155,7 +142,7 @@ class RemoteRepository:
 
     @property
     @cached_method
-    def _schedules(self) -> Dict[str, "RemoteSchedule"]:
+    def _schedules(self) -> dict[str, "RemoteSchedule"]:
         return {
             schedule_snap.name: RemoteSchedule(schedule_snap, self._handle)
             for schedule_snap in self.repository_snap.schedules
@@ -172,7 +159,7 @@ class RemoteRepository:
 
     @property
     @cached_method
-    def _resources(self) -> Dict[str, "RemoteResource"]:
+    def _resources(self) -> dict[str, "RemoteResource"]:
         return {
             resource_snap.name: RemoteResource(resource_snap, self._handle)
             for resource_snap in (self.repository_snap.resources or [])
@@ -196,17 +183,21 @@ class RemoteRepository:
 
     @property
     @cached_method
-    def _sensors(self) -> Dict[str, "RemoteSensor"]:
+    def _sensors(self) -> dict[str, "RemoteSensor"]:
         sensor_datas = {
             sensor_snap.name: RemoteSensor(sensor_snap, self._handle)
             for sensor_snap in self.repository_snap.sensors
         }
 
+        if not self._instance.auto_materialize_use_sensors:
+            return sensor_datas
+
         # if necessary, create a default automation condition sensor
         # NOTE: if a user's code location is at a version >= 1.9, then this step should
         # never be necessary, as this will be added in Definitions construction process
         default_sensor_selection = get_default_automation_condition_sensor_selection(
-            sensors=[data for data in sensor_datas.values()], asset_graph=self.asset_graph
+            sensors=[data for data in sensor_datas.values()],
+            asset_graph=self.asset_graph,
         )
         if default_sensor_selection is not None:
             default_sensor_data = SensorSnap(
@@ -238,7 +229,7 @@ class RemoteRepository:
 
     @property
     @cached_method
-    def _partition_sets(self) -> Dict[str, "RemotePartitionSet"]:
+    def _partition_sets(self) -> dict[str, "RemotePartitionSet"]:
         return {
             partition_set_snap.name: RemotePartitionSet(partition_set_snap, self._handle)
             for partition_set_snap in self.repository_snap.partition_sets
@@ -380,7 +371,7 @@ class RemoteRepository:
         selected_asset_keys: Optional[AbstractSet[AssetKey]],
     ) -> PartitionsDefinition:
         asset_nodes = self.get_asset_node_snaps(job_name)
-        unique_partitions_defs: Set[PartitionsDefinition] = set()
+        unique_partitions_defs: set[PartitionsDefinition] = set()
         for asset_node in asset_nodes:
             if selected_asset_keys is not None and asset_node.asset_key not in selected_asset_keys:
                 continue
@@ -399,7 +390,7 @@ class RemoteRepository:
     @cached_property
     def _sensor_mappings(
         self,
-    ) -> Tuple[
+    ) -> tuple[
         Mapping[str, Sequence["RemoteSensor"]],
         Mapping[AssetKey, Sequence["RemoteSensor"]],
     ]:
@@ -432,7 +423,7 @@ class RemoteRepository:
         return job_name_mapping, asset_key_mapping
 
     @property
-    def _sensors_by_job_name(self) -> Mapping[str, Sequence["RemoteSensor"]]:
+    def sensors_by_job_name(self) -> Mapping[str, Sequence["RemoteSensor"]]:
         return self._sensor_mappings[0]
 
     @property
@@ -440,7 +431,7 @@ class RemoteRepository:
         return self._sensor_mappings[1]
 
     @cached_property
-    def _schedules_by_job_name(self) -> Mapping[str, Sequence["RemoteSchedule"]]:
+    def schedules_by_job_name(self) -> Mapping[str, Sequence["RemoteSchedule"]]:
         mapping = defaultdict(list)
         for schedule in self.get_schedules():
             mapping[schedule.job_name].append(schedule)
@@ -457,8 +448,8 @@ class RemoteRepository:
             sensors.update(self._sensors_by_asset_key[asset_key])
 
         for job_name in asset_snap.job_names:
-            if job_name != IMPLICIT_ASSET_JOB_NAME and job_name in self._sensors_by_job_name:
-                sensors.update(self._sensors_by_job_name[job_name])
+            if job_name != IMPLICIT_ASSET_JOB_NAME and job_name in self.sensors_by_job_name:
+                sensors.update(self.sensors_by_job_name[job_name])
 
         return sensors
 
@@ -469,8 +460,8 @@ class RemoteRepository:
 
         schedules = set()
         for job_name in asset_snap.job_names:
-            if job_name != IMPLICIT_ASSET_JOB_NAME and job_name in self._schedules_by_job_name:
-                schedules.update(self._schedules_by_job_name[job_name])
+            if job_name != IMPLICIT_ASSET_JOB_NAME and job_name in self.schedules_by_job_name:
+                schedules.update(self.schedules_by_job_name[job_name])
 
         return schedules
 
@@ -503,14 +494,13 @@ class RemoteJob(RepresentedJob):
         if job_data_snap:
             self._active_preset_dict = {ap.name: ap for ap in job_data_snap.active_presets}
             self._name = job_data_snap.name
-            self._snapshot_id = self._job_index.job_snapshot_id
 
         elif job_ref_snap:
             self._active_preset_dict = {ap.name: ap for ap in job_ref_snap.active_presets}
             self._name = job_ref_snap.name
             if ref_to_data_fn is None:
                 check.failed("ref_to_data_fn must be passed when using deferred snapshots")
-            self._snapshot_id = job_ref_snap.snapshot_id
+
         else:
             check.failed("Expected either job data or ref, got neither")
 
@@ -630,6 +620,13 @@ class RemoteJob(RepresentedJob):
     @property
     def job_snapshot(self) -> JobSnap:
         return self._job_index.job_snapshot
+
+    @property
+    def _snapshot_id(self) -> str:
+        if self._job_ref_snap:
+            return self._job_ref_snap.snapshot_id
+
+        return self._job_index.job_snapshot_id
 
     @property
     def computed_job_snapshot_id(self) -> str:
@@ -760,11 +757,11 @@ class RemoteResource:
         return self._resource_snap.resource_snapshot.description
 
     @property
-    def config_field_snaps(self) -> List[ConfigFieldSnap]:
+    def config_field_snaps(self) -> list[ConfigFieldSnap]:
         return self._resource_snap.config_field_snaps
 
     @property
-    def configured_values(self) -> Dict[str, ResourceValueSnap]:
+    def configured_values(self) -> dict[str, ResourceValueSnap]:
         return self._resource_snap.configured_values
 
     @property
@@ -772,11 +769,11 @@ class RemoteResource:
         return self._resource_snap.config_schema_snap
 
     @property
-    def nested_resources(self) -> Dict[str, NestedResource]:
+    def nested_resources(self) -> dict[str, NestedResource]:
         return self._resource_snap.nested_resources
 
     @property
-    def parent_resources(self) -> Dict[str, str]:
+    def parent_resources(self) -> dict[str, str]:
         return self._resource_snap.parent_resources
 
     @property
@@ -788,19 +785,19 @@ class RemoteResource:
         return self._resource_snap.is_top_level
 
     @property
-    def asset_keys_using(self) -> List[AssetKey]:
+    def asset_keys_using(self) -> list[AssetKey]:
         return self._resource_snap.asset_keys_using
 
     @property
-    def job_ops_using(self) -> List[ResourceJobUsageEntry]:
+    def job_ops_using(self) -> list[ResourceJobUsageEntry]:
         return self._resource_snap.job_ops_using
 
     @property
-    def schedules_using(self) -> List[str]:
+    def schedules_using(self) -> list[str]:
         return self._resource_snap.schedules_using
 
     @property
-    def sensors_using(self) -> List[str]:
+    def sensors_using(self) -> list[str]:
         return self._resource_snap.sensors_using
 
     @property
@@ -812,7 +809,8 @@ class RemoteSchedule:
     def __init__(self, schedule_snap: ScheduleSnap, handle: RepositoryHandle):
         self._schedule_snap = check.inst_param(schedule_snap, "schedule_snap", ScheduleSnap)
         self._handle = InstigatorHandle(
-            self._schedule_snap.name, check.inst_param(handle, "handle", RepositoryHandle)
+            self._schedule_snap.name,
+            check.inst_param(handle, "handle", RepositoryHandle),
         )
 
     @property

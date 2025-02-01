@@ -24,6 +24,8 @@ from dagster import (
 )
 from dagster._check import CheckError
 from dagster._core.definitions.asset_check_spec import AssetCheckSpec
+from dagster._core.definitions.asset_key import AssetKey
+from dagster._core.definitions.asset_spec import AssetSpec
 from dagster._core.definitions.job_definition import JobDefinition
 from dagster._core.definitions.op_definition import OpDefinition
 from dagster._core.definitions.repository_definition.repository_definition import (
@@ -31,7 +33,7 @@ from dagster._core.definitions.repository_definition.repository_definition impor
 )
 from dagster._core.errors import DagsterInvalidDefinitionError, DagsterInvariantViolationError
 from dagster._core.storage.dagster_run import DagsterRun
-from dagster._core.test_utils import instance_for_test, raise_exception_on_warnings
+from dagster._core.test_utils import instance_for_test
 
 
 def test_op_execution_context():
@@ -97,46 +99,6 @@ def test_asset_execution_repo_context():
         assert result.success
 
 
-def test_instance_check():
-    raise_exception_on_warnings()
-
-    class AssetExecutionContextSubclass(AssetExecutionContext):
-        # allows us to confirm isinstance(context, AssetExecutionContext)
-        # does not throw deprecation warnings
-        def __init__(self):
-            pass
-
-    @op
-    def test_op_context_instance_check(context: OpExecutionContext):
-        step_context = context._step_execution_context  # noqa: SLF001
-        op_context = OpExecutionContext(step_execution_context=step_context)
-        asset_context = AssetExecutionContext(op_execution_context=op_context)
-        with pytest.raises(DeprecationWarning):
-            isinstance(asset_context, OpExecutionContext)
-        assert not isinstance(op_context, AssetExecutionContext)
-
-        # the instance checks below will not hit the metaclass __instancecheck__ method because
-        # python returns early if the type is the same
-        # https://github.com/python/cpython/blob/b57b4ac042b977e0b42a2f5ddb30ca7edffacfa9/Objects/abstract.c#L2404
-        # but still test for completeness
-        assert isinstance(asset_context, AssetExecutionContext)
-        assert isinstance(op_context, OpExecutionContext)
-
-        # since python short circuits when context is AssetExecutionContext and you call
-        # isinstance(context, AssetExecutionContext), make a subclass of AssetExecutionContext
-        # so that we can ensure isinstance(context, AssetExecutionContext) doesn't throw a
-        # deprecation warning
-
-        asset_subclass_context = AssetExecutionContextSubclass()
-        assert isinstance(asset_subclass_context, AssetExecutionContext)
-
-    @job
-    def test_isinstance():
-        test_op_context_instance_check()
-
-    test_isinstance.execute_in_process()
-
-
 def test_context_provided_to_asset():
     @asset
     def no_annotation(context):
@@ -200,21 +162,21 @@ def test_context_provided_to_op():
 
 
 def test_context_provided_to_multi_asset():
-    @multi_asset(outs={"out1": AssetOut(dagster_type=None), "out2": AssetOut(dagster_type=None)})
+    @multi_asset(outs={"out1": AssetOut(dagster_type=None), "out2": AssetOut(dagster_type=None)})  # pyright: ignore[reportArgumentType]
     def no_annotation(context):
         assert isinstance(context, AssetExecutionContext)
         return None, None
 
     materialize([no_annotation])
 
-    @multi_asset(outs={"out1": AssetOut(dagster_type=None), "out2": AssetOut(dagster_type=None)})
+    @multi_asset(outs={"out1": AssetOut(dagster_type=None), "out2": AssetOut(dagster_type=None)})  # pyright: ignore[reportArgumentType]
     def asset_annotation(context: AssetExecutionContext):
         assert isinstance(context, AssetExecutionContext)
         return None, None
 
     materialize([asset_annotation])
 
-    @multi_asset(outs={"out1": AssetOut(dagster_type=None), "out2": AssetOut(dagster_type=None)})
+    @multi_asset(outs={"out1": AssetOut(dagster_type=None), "out2": AssetOut(dagster_type=None)})  # pyright: ignore[reportArgumentType]
     def op_annotation(context: OpExecutionContext):
         assert isinstance(context, OpExecutionContext)
         # AssetExecutionContext is an instance of OpExecutionContext, so add this additional check
@@ -284,7 +246,7 @@ def test_context_provided_to_graph_multi_asset():
         return 1
 
     @graph_multi_asset(
-        outs={"out1": AssetOut(dagster_type=None), "out2": AssetOut(dagster_type=None)}
+        outs={"out1": AssetOut(dagster_type=None), "out2": AssetOut(dagster_type=None)}  # pyright: ignore[reportArgumentType]
     )
     def no_annotation_asset():
         return layered_op(no_annotation_op()), layered_op(no_annotation_op())
@@ -297,7 +259,7 @@ def test_context_provided_to_graph_multi_asset():
         return 1
 
     @graph_multi_asset(
-        outs={"out1": AssetOut(dagster_type=None), "out2": AssetOut(dagster_type=None)}
+        outs={"out1": AssetOut(dagster_type=None), "out2": AssetOut(dagster_type=None)}  # pyright: ignore[reportArgumentType]
     )
     def asset_annotation_asset():
         return layered_op(asset_annotation_op()), layered_op(asset_annotation_op())
@@ -312,7 +274,7 @@ def test_context_provided_to_graph_multi_asset():
         return 1
 
     @graph_multi_asset(
-        outs={"out1": AssetOut(dagster_type=None), "out2": AssetOut(dagster_type=None)}
+        outs={"out1": AssetOut(dagster_type=None), "out2": AssetOut(dagster_type=None)}  # pyright: ignore[reportArgumentType]
     )
     def op_annotation_asset():
         return layered_op(op_annotation_op()), layered_op(op_annotation_op())
@@ -372,7 +334,7 @@ def test_context_provided_to_asset_check():
     def to_check():
         return 1
 
-    @asset_check(asset=to_check)
+    @asset_check(asset=to_check)  # pyright: ignore[reportArgumentType]
     def no_annotation(context):
         assert isinstance(context, AssetCheckExecutionContext)
         assert context.check_specs == [
@@ -384,7 +346,7 @@ def test_context_provided_to_asset_check():
 
     execute_assets_and_checks(assets=[to_check], asset_checks=[no_annotation])
 
-    @asset_check(asset=to_check)
+    @asset_check(asset=to_check)  # pyright: ignore[reportArgumentType]
     def asset_annotation(context: AssetExecutionContext):
         pass
 
@@ -394,7 +356,7 @@ def test_context_provided_to_asset_check():
     ):
         execute_assets_and_checks(assets=[to_check], asset_checks=[asset_annotation])
 
-    @asset_check(asset=to_check)
+    @asset_check(asset=to_check)  # pyright: ignore[reportArgumentType]
     def op_annotation(context: OpExecutionContext):
         assert isinstance(context, OpExecutionContext)
         # AssetExecutionContext is an instance of OpExecutionContext, so add this additional check
@@ -448,3 +410,57 @@ def test_get_context():
         assert context == AssetExecutionContext.get()
 
     assert materialize([a]).success
+
+
+def test_graph_multi_asset_out_from_spec() -> None:
+    @op
+    def layered_op(x):
+        return x + 1
+
+    @op
+    def inner_op(context):
+        return 1
+
+    @graph_multi_asset(
+        outs={
+            "out1": AssetOut.from_spec(AssetSpec(key="my_key", kinds={"python", "s3"})),
+            "out2": AssetOut.from_spec(
+                AssetSpec(key="my_other_key", kinds={"python", "snowflake"})
+            ),
+        }
+    )
+    def no_annotation_asset():
+        return layered_op(inner_op()), layered_op(inner_op())
+
+    assert len(no_annotation_asset.specs_by_key) == 2
+    my_key_spec = no_annotation_asset.specs_by_key[AssetKey("my_key")]
+    assert my_key_spec.kinds == {"python", "s3"}
+    my_other_key_spec = no_annotation_asset.specs_by_key[AssetKey("my_other_key")]
+    assert my_other_key_spec.kinds == {"python", "snowflake"}
+
+    outs = materialize([no_annotation_asset])
+    assert outs.success
+
+
+def test_graph_multi_asset_out_from_spec_deps() -> None:
+    @op
+    def layered_op(x):
+        return x + 1
+
+    @op
+    def inner_op(context):
+        return 1
+
+    # Currently, cannot specify deps on AssetOut.from_spec
+    with pytest.raises(DagsterInvalidDefinitionError):
+
+        @graph_multi_asset(
+            outs={
+                "out1": AssetOut.from_spec(AssetSpec(key="my_key", deps={"my_upstream_asset"})),
+                "out2": AssetOut.from_spec(
+                    AssetSpec(key="my_other_key", deps={"my_upstream_asset"})
+                ),
+            }
+        )
+        def no_annotation_asset():
+            return layered_op(inner_op()), layered_op(inner_op())

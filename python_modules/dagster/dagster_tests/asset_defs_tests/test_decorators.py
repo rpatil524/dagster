@@ -3,6 +3,7 @@ from typing import Any
 import pytest
 from dagster import (
     AllPartitionMapping,
+    AssetExecutionContext,
     AssetKey,
     AssetOut,
     DagsterInvalidDefinitionError,
@@ -15,7 +16,6 @@ from dagster import (
     MultiPartitionMapping,
     MultiPartitionsDefinition,
     Nothing,
-    OpExecutionContext,
     Out,
     Output,
     StaticPartitionsDefinition,
@@ -298,7 +298,7 @@ def test_multi_asset_internal_asset_deps_invalid():
 
 
 def test_asset_with_dagster_type():
-    @asset(dagster_type=String)
+    @asset(dagster_type=String)  # pyright: ignore[reportArgumentType]
     def my_asset(arg1):
         return arg1
 
@@ -485,8 +485,8 @@ def test_infer_output_dagster_type():
     def my_asset() -> str:
         return "foo"
 
-    assert my_asset.op.outs["result"].dagster_type.display_name == "String"
-    assert my_asset.op.outs["result"].dagster_type.typing_type == str
+    assert my_asset.op.outs["result"].dagster_type.display_name == "String"  # pyright: ignore[reportAttributeAccessIssue]
+    assert my_asset.op.outs["result"].dagster_type.typing_type == str  # pyright: ignore[reportAttributeAccessIssue]
 
 
 def test_infer_output_dagster_type_none():
@@ -494,8 +494,8 @@ def test_infer_output_dagster_type_none():
     def my_asset() -> None:
         pass
 
-    assert my_asset.op.outs["result"].dagster_type.typing_type == type(None)
-    assert my_asset.op.outs["result"].dagster_type.display_name == "Nothing"
+    assert my_asset.op.outs["result"].dagster_type.typing_type == type(None)  # pyright: ignore[reportAttributeAccessIssue]
+    assert my_asset.op.outs["result"].dagster_type.display_name == "Nothing"  # pyright: ignore[reportAttributeAccessIssue]
 
 
 def test_infer_output_dagster_type_empty():
@@ -503,8 +503,34 @@ def test_infer_output_dagster_type_empty():
     def my_asset():
         pass
 
-    assert my_asset.op.outs["result"].dagster_type.typing_type is Any
-    assert my_asset.op.outs["result"].dagster_type.display_name == "Any"
+    assert my_asset.op.outs["result"].dagster_type.typing_type is Any  # pyright: ignore[reportAttributeAccessIssue]
+    assert my_asset.op.outs["result"].dagster_type.display_name == "Any"  # pyright: ignore[reportAttributeAccessIssue]
+
+
+def test_asset_with_docstring_description():
+    @asset
+    def asset1():
+        """Docstring."""
+        pass
+
+    assert asset1.op.description == "Docstring."
+
+
+def test_asset_with_parameter_description():
+    @asset(description="parameter")
+    def asset1():
+        pass
+
+    assert asset1.op.description == "parameter"
+
+
+def test_asset_with_docstring_and_parameter_description():
+    @asset(description="parameter")
+    def asset1():
+        """Docstring."""
+        pass
+
+    assert asset1.op.description == "parameter"
 
 
 def test_invoking_simple_assets():
@@ -530,7 +556,7 @@ def test_invoking_simple_assets():
     out = arg_kwarg_asset([1, 2, 3], kwarg1=[3, 2, 1])
     assert out == [1, 2, 3, 3, 2, 1]
 
-    out = arg_kwarg_asset(([1, 2, 3]))
+    out = arg_kwarg_asset([1, 2, 3])
     assert out == [1, 2, 3, 0]
 
 
@@ -553,7 +579,7 @@ def test_invoking_asset_with_deps():
 def test_invoking_asset_with_context():
     @asset
     def asset_with_context(context, arg1):
-        assert isinstance(context, OpExecutionContext)
+        assert isinstance(context, AssetExecutionContext)
         return arg1
 
     ctx = build_asset_context()
@@ -660,11 +686,11 @@ def test_multi_asset_resource_defs():
     def baz_resource():
         pass
 
-    @io_manager(required_resource_keys={"baz"})
+    @io_manager(required_resource_keys={"baz"})  # pyright: ignore[reportArgumentType]
     def foo_manager():
         pass
 
-    @io_manager
+    @io_manager  # pyright: ignore[reportCallIssue,reportArgumentType]
     def bar_manager():
         pass
 
@@ -691,11 +717,11 @@ def test_multi_asset_resource_defs_specs() -> None:
     def baz_resource():
         pass
 
-    @io_manager(required_resource_keys={"baz"})
+    @io_manager(required_resource_keys={"baz"})  # pyright: ignore[reportArgumentType]
     def foo_manager():
         pass
 
-    @io_manager
+    @io_manager  # pyright: ignore[reportCallIssue,reportArgumentType]
     def bar_manager():
         pass
 
@@ -735,7 +761,7 @@ def test_multi_asset_code_versions():
 @ignore_warning("Parameter `io_manager_def` .* is experimental")
 @ignore_warning("Parameter `resource_defs` .* is experimental")
 def test_asset_io_manager_def():
-    @io_manager
+    @io_manager  # pyright: ignore[reportCallIssue,reportArgumentType]
     def the_manager():
         pass
 
@@ -745,7 +771,7 @@ def test_asset_io_manager_def():
 
     # If IO manager def is passed directly, then it doesn't appear as a
     # required resource key on the underlying op.
-    assert set(the_asset.node_def.required_resource_keys) == set()
+    assert set(the_asset.node_def.required_resource_keys) == set()  # pyright: ignore[reportAttributeAccessIssue]
 
     @asset(io_manager_key="blah", resource_defs={"blah": the_manager})
     def other_asset():
@@ -753,7 +779,7 @@ def test_asset_io_manager_def():
 
     # If IO manager def is provided as a resource def, it appears in required
     # resource keys on the underlying op.
-    assert set(other_asset.node_def.required_resource_keys) == {"blah"}
+    assert set(other_asset.node_def.required_resource_keys) == {"blah"}  # pyright: ignore[reportAttributeAccessIssue]
 
 
 def test_asset_retry_policy():
@@ -916,6 +942,8 @@ def test_graph_asset_decorator_no_args():
 @ignore_warning("Parameter `resource_defs` .* is experimental")
 @ignore_warning("Parameter `tags` .* is experimental")
 @ignore_warning("Parameter `owners` .* is experimental")
+@ignore_warning("Parameter `auto_materialize_policy` .* is deprecated")
+@ignore_warning("Parameter `freshness_policy` .* is deprecated")
 @pytest.mark.parametrize(
     "automation_condition_arg",
     [
@@ -1126,6 +1154,8 @@ def test_graph_asset_w_config_mapping():
 @ignore_warning("Function `AutoMaterializePolicy.lazy` is deprecated")
 @ignore_warning("Parameter `auto_materialize_policy` is deprecated")
 @ignore_warning("Parameter `resource_defs`")
+@ignore_warning("Parameter `auto_materialize_policy`")
+@ignore_warning("Parameter `freshness_policy`")
 @pytest.mark.parametrize(
     "automation_condition_arg",
     [
@@ -1291,6 +1321,36 @@ def test_multi_asset_graph_asset_w_tags():
     assert the_asset.tags_by_key[AssetKey("no_tags")] == {}
 
 
+@ignore_warning("Parameter `owners` of initializer `AssetOut.__init__` is experimental")
+def test_multi_asset_graph_asset_w_owners():
+    @op
+    def return_1():
+        return 1
+
+    @op
+    def plus_1(x):
+        return x + 1
+
+    @graph_multi_asset(
+        outs={
+            "first_asset": AssetOut(owners=["team:team_name1"]),
+            "second_asset": AssetOut(owners=["team:team_name2"]),
+            "no_owner": AssetOut(),
+        }
+    )
+    def the_asset():
+        one = return_1()
+        two = plus_1(one)
+        three = plus_1(two)
+        return {"first_asset": one, "second_asset": two, "no_owner": three}
+
+    result = materialize_to_memory([the_asset])
+    assert result.success
+    assert the_asset.owners_by_key[AssetKey("first_asset")] == ["team:team_name1"]
+    assert the_asset.owners_by_key[AssetKey("second_asset")] == ["team:team_name2"]
+    assert the_asset.owners_by_key[AssetKey("no_owner")] == []
+
+
 def test_graph_asset_w_ins_and_kwargs():
     @asset
     def upstream():
@@ -1352,7 +1412,7 @@ def test_multi_asset_with_bare_resource():
 @ignore_warning("Static method `AutomationCondition.on_cron` is experimental")
 @ignore_warning("Static method `AutomationCondition.eager` is experimental")
 @ignore_warning("Function `AutoMaterializePolicy.lazy` is deprecated")
-@ignore_warning("Parameter `auto_materialize_policy` is deprecated")
+@ignore_warning("Parameter `auto_materialize_policy`")
 def test_multi_asset_with_automation_conditions():
     ac2 = AutomationCondition.on_cron("@daily")
     ac3 = AutomationCondition.eager()
@@ -1447,6 +1507,8 @@ def test_graph_inputs_error():
         def _(): ...
 
     except DagsterInvalidDefinitionError as err:
+        assert "'_' decorated function does not have argument(s) 'start'" in str(err)
+        # Ensure that dagster type code path doesn't throw since we're using Nothing type.
         assert "except for Ins that have the Nothing dagster_type" not in str(err)
 
     try:
@@ -1455,4 +1517,6 @@ def test_graph_inputs_error():
         def _(): ...
 
     except DagsterInvalidDefinitionError as err:
+        assert "'_' decorated function does not have argument(s) 'start'" in str(err)
+        # Ensure that dagster type code path doesn't throw since we're using Nothing type.
         assert "except for Ins that have the Nothing dagster_type" not in str(err)

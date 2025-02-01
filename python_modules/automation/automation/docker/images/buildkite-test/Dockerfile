@@ -131,14 +131,22 @@ RUN curl -fsSL https://download.docker.com/linux/debian/gpg | \
     && curl -L "https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose \
     && chmod +x /usr/local/bin/docker-compose
 
-# Install Python build deps
-RUN pip install -U pip setuptools wheel
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:0.5.4 /uv /bin/
 
 # Install redis
 RUN wget http://download.redis.io/redis-stable.tar.gz \
     && tar xvzf redis-stable.tar.gz \
     && cd redis-stable \
     && make install
+
+# Install the DuckDB CLI
+RUN curl --fail --silent --show-error --location \
+    --output duckdb_cli-linux-amd64.zip \
+    https://github.com/duckdb/duckdb/releases/download/v1.1.3/duckdb_cli-linux-amd64.zip \
+    && unzip duckdb_cli-linux-amd64.zip \
+    && mv duckdb /usr/local/bin/duckdb \
+    && chmod +x /usr/local/bin/duckdb
 
 # Clean up
 RUN apt-get remove -yqq \
@@ -159,7 +167,7 @@ WORKDIR dagster
 ENV VIRTUAL_ENV=/usr/local
 ENV UV_HTTP_TIMEOUT=300
 RUN python scripts/install_dev_python_modules.py --system awscli || exit 1
-RUN pip freeze --exclude-editable > /snapshot-reqs.txt
+RUN uv pip freeze --exclude-editable > /snapshot-reqs.txt
 
 # Final image includes both system deps and preinstalled non-Dagster python deps
 FROM system_base
@@ -168,7 +176,7 @@ COPY --from=snapshot_builder /snapshot-reqs.txt .
 
 # Preinstall non-Dagster packages in image so that the virtual environment
 # builds faster in Buildkite.
-RUN pip install -r /snapshot-reqs.txt \
+RUN uv pip install --system -r /snapshot-reqs.txt \
     && rm /snapshot-reqs.txt
 
 # New versions of debian require allowlisting folders where `git` can run

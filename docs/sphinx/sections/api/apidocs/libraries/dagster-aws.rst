@@ -49,6 +49,9 @@ ECS
 .. autoconfigurable:: dagster_aws.ecs.EcsRunLauncher
   :annotation: RunLauncher
 
+.. autoconfigurable:: dagster_aws.ecs.ecs_executor
+  :annotation: ExecutorDefinition
+
 
 Redshift
 --------
@@ -123,6 +126,8 @@ Clients
 .. autoclass:: dagster_aws.pipes.PipesECSClient
 
 .. autoclass:: dagster_aws.pipes.PipesEMRClient
+
+.. autoclass:: dagster_aws.pipes.PipesEMRContainersClient
 
 .. autoclass:: dagster_aws.pipes.PipesEMRServerlessClient
 

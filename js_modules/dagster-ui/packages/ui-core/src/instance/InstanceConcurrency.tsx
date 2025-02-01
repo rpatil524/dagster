@@ -17,13 +17,13 @@ import {
   PageHeader,
   Popover,
   Spinner,
-  StyledRawCodeMirror,
   Subheading,
   Table,
   Tag,
   TextInput,
   Tooltip,
 } from '@dagster-io/ui-components';
+import {StyledRawCodeMirror} from '@dagster-io/ui-components/editor';
 import * as React from 'react';
 import {Link} from 'react-router-dom';
 
@@ -963,6 +963,7 @@ const CONCURRENCY_LIMIT_FRAGMENT = gql`
   fragment ConcurrencyLimitFragment on ConcurrencyKeyInfo {
     concurrencyKey
     slotCount
+    limit
     claimedSlots {
       runId
       stepKey
@@ -1019,7 +1020,7 @@ export const FREE_CONCURRENCY_SLOTS_MUTATION = gql`
   }
 `;
 
-const CONCURRENCY_KEY_DETAILS_QUERY = gql`
+export const CONCURRENCY_KEY_DETAILS_QUERY = gql`
   query ConcurrencyKeyDetailsQuery($concurrencyKey: String!) {
     instance {
       id

@@ -1,5 +1,6 @@
 import logging
-from typing import TYPE_CHECKING, Mapping, Optional, Sequence, Tuple
+from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING, Optional, Tuple  # noqa: F401, UP035
 
 import coloredlogs
 
@@ -50,6 +51,26 @@ def colored_console_logger(init_context: "InitLoggerContext") -> logging.Logger:
     )
 
 
+class JsonLogFormatter(logging.Formatter):
+    def format(self, record):
+        dict_to_dump = {}
+        for k, v in record.__dict__.items():
+            if k == LOG_RECORD_EVENT_ATTR:
+                # Redundant with the "dagster_event" field under "dagster_meta"
+                continue
+            elif k == LOG_RECORD_METADATA_ATTR:
+                # Events objects are not always JSON-serializable, so need to pack them first
+                json_serializable_event = pack_value(v[LOG_RECORD_EVENT_ATTR])
+                json_serializable_dagster_meta = DagsterLogRecordMetadata(
+                    **{**v, "dagster_event": json_serializable_event}
+                )
+                dict_to_dump[LOG_RECORD_METADATA_ATTR] = json_serializable_dagster_meta
+            else:
+                dict_to_dump[k] = v
+
+        return _seven.json.dumps(dict_to_dump)
+
+
 @logger(
     Field(
         {
@@ -97,26 +118,7 @@ def json_console_logger(init_context: "InitLoggerContext") -> logging.Logger:
 
     handler = coloredlogs.StandardErrorHandler()
 
-    class JsonFormatter(logging.Formatter):
-        def format(self, record):
-            dict_to_dump = {}
-            for k, v in record.__dict__.items():
-                if k == LOG_RECORD_EVENT_ATTR:
-                    # Redundant with the "dagster_event" field under "dagster_meta"
-                    continue
-                elif k == LOG_RECORD_METADATA_ATTR:
-                    # Events objects are not always JSON-serializable, so need to pack them first
-                    json_serializable_event = pack_value(v[LOG_RECORD_EVENT_ATTR])
-                    json_serializable_dagster_meta = DagsterLogRecordMetadata(
-                        **{**v, "dagster_event": json_serializable_event}
-                    )
-                    dict_to_dump[LOG_RECORD_METADATA_ATTR] = json_serializable_dagster_meta
-                else:
-                    dict_to_dump[k] = v
-
-            return _seven.json.dumps(dict_to_dump)
-
-    handler.setFormatter(JsonFormatter())
+    handler.setFormatter(JsonLogFormatter())
     logger_.addHandler(handler)
 
     return logger_
@@ -124,7 +126,7 @@ def json_console_logger(init_context: "InitLoggerContext") -> logging.Logger:
 
 def default_system_loggers(
     instance: Optional["DagsterInstance"],
-) -> Sequence[Tuple["LoggerDefinition", Mapping[str, object]]]:
+) -> Sequence[tuple["LoggerDefinition", Mapping[str, object]]]:
     """If users don't provide configuration for any loggers, we instantiate these loggers with the
     default config.
 

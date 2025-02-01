@@ -30,6 +30,19 @@ jest.mock('../../live-data-provider/util', () => {
   };
 });
 
+jest.mock('../../live-data-provider/LiveDataScheduler', () => {
+  return {
+    LiveDataScheduler: class LiveDataScheduler {
+      scheduleStartFetchLoop(doStart: () => void) {
+        doStart();
+      }
+      scheduleStopFetchLoop(doStop: () => void) {
+        doStop();
+      }
+    },
+  };
+});
+
 function Test({
   mocks,
   hooks,
@@ -67,8 +80,8 @@ function Test({
 describe('AssetLiveDataProvider', () => {
   it('provides asset data and uses cache if recently fetched', async () => {
     const assetKeys = [buildAssetKey({path: ['key1']})];
-    const mockedQuery = buildMockedAssetGraphLiveQuery(assetKeys);
-    const mockedQuery2 = buildMockedAssetGraphLiveQuery(assetKeys);
+    const [mockedQuery, mockedFreshnessQuery] = buildMockedAssetGraphLiveQuery(assetKeys);
+    const [mockedQuery2, mockedFreshnessQuery2] = buildMockedAssetGraphLiveQuery(assetKeys);
 
     const resultFn = getMockResultFn(mockedQuery);
     const resultFn2 = getMockResultFn(mockedQuery2);
@@ -77,7 +90,10 @@ describe('AssetLiveDataProvider', () => {
     const hookResult2 = jest.fn();
 
     const {rerender} = render(
-      <Test mocks={[mockedQuery, mockedQuery2]} hooks={[{keys: assetKeys, hookResult}]} />,
+      <Test
+        mocks={[mockedQuery, mockedFreshnessQuery, mockedQuery2, mockedFreshnessQuery2]}
+        hooks={[{keys: assetKeys, hookResult}]}
+      />,
     );
 
     // Initially an empty object
@@ -129,8 +145,8 @@ describe('AssetLiveDataProvider', () => {
 
   it('obeys document visibility', async () => {
     const assetKeys = [buildAssetKey({path: ['key1']})];
-    const mockedQuery = buildMockedAssetGraphLiveQuery(assetKeys);
-    const mockedQuery2 = buildMockedAssetGraphLiveQuery(assetKeys);
+    const [mockedQuery, mockedFreshnessQuery] = buildMockedAssetGraphLiveQuery(assetKeys);
+    const [mockedQuery2, mockedFreshnessQuery2] = buildMockedAssetGraphLiveQuery(assetKeys);
 
     const resultFn = getMockResultFn(mockedQuery);
     const resultFn2 = getMockResultFn(mockedQuery2);
@@ -139,7 +155,10 @@ describe('AssetLiveDataProvider', () => {
     const hookResult2 = jest.fn();
 
     const {rerender} = render(
-      <Test mocks={[mockedQuery, mockedQuery2]} hooks={[{keys: assetKeys, hookResult}]} />,
+      <Test
+        mocks={[mockedQuery, mockedFreshnessQuery, mockedQuery2, mockedFreshnessQuery2]}
+        hooks={[{keys: assetKeys, hookResult}]}
+      />,
     );
 
     // Initially an empty object
@@ -157,7 +176,7 @@ describe('AssetLiveDataProvider', () => {
 
     rerender(
       <Test
-        mocks={[mockedQuery, mockedQuery2]}
+        mocks={[mockedQuery, mockedFreshnessQuery, mockedQuery2, mockedFreshnessQuery2]}
         hooks={[{keys: assetKeys, hookResult: hookResult2}]}
       />,
     );
@@ -207,15 +226,20 @@ describe('AssetLiveDataProvider', () => {
     const chunk1 = assetKeys.slice(0, BATCH_SIZE);
     const chunk2 = assetKeys.slice(BATCH_SIZE, 2 * BATCH_SIZE);
 
-    const mockedQuery = buildMockedAssetGraphLiveQuery(chunk1);
-    const mockedQuery2 = buildMockedAssetGraphLiveQuery(chunk2);
+    const [mockedQuery, mockedFreshnessQuery] = buildMockedAssetGraphLiveQuery(chunk1);
+    const [mockedQuery2, mockedFreshnessQuery2] = buildMockedAssetGraphLiveQuery(chunk2);
 
     const resultFn = getMockResultFn(mockedQuery);
     const resultFn2 = getMockResultFn(mockedQuery2);
 
     const hookResult = jest.fn();
 
-    render(<Test mocks={[mockedQuery, mockedQuery2]} hooks={[{keys: assetKeys, hookResult}]} />);
+    render(
+      <Test
+        mocks={[mockedQuery, mockedFreshnessQuery, mockedQuery2, mockedFreshnessQuery2]}
+        hooks={[{keys: assetKeys, hookResult}]}
+      />,
+    );
 
     // Initially an empty object
     expect(resultFn).not.toHaveBeenCalled();
@@ -256,15 +280,15 @@ describe('AssetLiveDataProvider', () => {
     );
     const hook3Keys = assetKeys.slice(Math.floor((4 / 3) * BATCH_SIZE), 2 * BATCH_SIZE);
 
-    const mockedQuery = buildMockedAssetGraphLiveQuery(chunk1);
-    const mockedQuery2 = buildMockedAssetGraphLiveQuery(chunk2);
+    const [mockedQuery, mockedFreshnessQuery] = buildMockedAssetGraphLiveQuery(chunk1);
+    const [mockedQuery2, mockedFreshnessQuery2] = buildMockedAssetGraphLiveQuery(chunk2);
 
     const resultFn = getMockResultFn(mockedQuery);
     const resultFn2 = getMockResultFn(mockedQuery2);
 
     render(
       <Test
-        mocks={[mockedQuery, mockedQuery2]}
+        mocks={[mockedQuery, mockedFreshnessQuery, mockedQuery2, mockedFreshnessQuery2]}
         hooks={[
           {keys: hook1Keys, hookResult},
           {keys: hook2Keys, hookResult},
@@ -309,9 +333,12 @@ describe('AssetLiveDataProvider', () => {
 
     secondPrioritizedFetchKeys.push(...fetch1Keys);
 
-    const mockedQuery = buildMockedAssetGraphLiveQuery(fetch1Keys);
-    const mockedQuery2 = buildMockedAssetGraphLiveQuery(firstPrioritizedFetchKeys);
-    const mockedQuery3 = buildMockedAssetGraphLiveQuery(secondPrioritizedFetchKeys);
+    const [mockedQuery, mockedFreshnessQuery] = buildMockedAssetGraphLiveQuery(fetch1Keys);
+    const [mockedQuery2, mockedFreshnessQuery2] =
+      buildMockedAssetGraphLiveQuery(firstPrioritizedFetchKeys);
+    const [mockedQuery3, mockedFreshnessQuery3] = buildMockedAssetGraphLiveQuery(
+      secondPrioritizedFetchKeys,
+    );
 
     const resultFn = getMockResultFn(mockedQuery);
     const resultFn2 = getMockResultFn(mockedQuery2);
@@ -320,7 +347,14 @@ describe('AssetLiveDataProvider', () => {
     // First we fetch the keys from fetch1
     const {unmount} = render(
       <Test
-        mocks={[mockedQuery, mockedQuery2, mockedQuery3]}
+        mocks={[
+          mockedQuery,
+          mockedFreshnessQuery,
+          mockedQuery2,
+          mockedFreshnessQuery2,
+          mockedQuery3,
+          mockedFreshnessQuery3,
+        ]}
         hooks={[{keys: fetch1Keys, hookResult}]}
       />,
     );
@@ -347,7 +381,14 @@ describe('AssetLiveDataProvider', () => {
     // were previously fetched.
     render(
       <Test
-        mocks={[mockedQuery, mockedQuery2, mockedQuery3]}
+        mocks={[
+          mockedQuery,
+          mockedFreshnessQuery,
+          mockedQuery2,
+          mockedFreshnessQuery2,
+          mockedQuery3,
+          mockedFreshnessQuery3,
+        ]}
         hooks={[{keys: assetKeys, hookResult}]}
       />,
     );
@@ -364,12 +405,16 @@ describe('AssetLiveDataProvider', () => {
 
   it('Skips over asset keys that fail to fetch', async () => {
     const assetKeys = [buildAssetKey({path: ['key1']})];
-    const mockedQuery = buildMockedAssetGraphLiveQuery(assetKeys, undefined, [
-      new GraphQLError('500'),
-    ]);
-    const mockedQuery2 = buildMockedAssetGraphLiveQuery(assetKeys, undefined, [
-      new GraphQLError('500'),
-    ]);
+    const [mockedQuery, mockedFreshnessQuery] = buildMockedAssetGraphLiveQuery(
+      assetKeys,
+      undefined,
+      [new GraphQLError('500')],
+    );
+    const [mockedQuery2, mockedFreshnessQuery2] = buildMockedAssetGraphLiveQuery(
+      assetKeys,
+      undefined,
+      [new GraphQLError('500')],
+    );
 
     const resultFn = getMockResultFn(mockedQuery);
     const resultFn2 = getMockResultFn(mockedQuery2);
@@ -378,7 +423,10 @@ describe('AssetLiveDataProvider', () => {
     const hookResult2 = jest.fn();
 
     const {rerender} = render(
-      <Test mocks={[mockedQuery, mockedQuery2]} hooks={[{keys: assetKeys, hookResult}]} />,
+      <Test
+        mocks={[mockedQuery, mockedFreshnessQuery, mockedQuery2, mockedFreshnessQuery2]}
+        hooks={[{keys: assetKeys, hookResult}]}
+      />,
     );
 
     // Initially an empty object
@@ -427,8 +475,8 @@ describe('AssetLiveDataProvider', () => {
   it('Has multiple threads', async () => {
     const assetKeys = [buildAssetKey({path: ['key1']})];
     const assetKeys2 = [buildAssetKey({path: ['key2']})];
-    const mockedQuery = buildMockedAssetGraphLiveQuery(assetKeys);
-    const mockedQuery2 = buildMockedAssetGraphLiveQuery(assetKeys2);
+    const [mockedQuery, mockedFreshnessQuery] = buildMockedAssetGraphLiveQuery(assetKeys);
+    const [mockedQuery2, mockedFreshnessQuery2] = buildMockedAssetGraphLiveQuery(assetKeys2);
 
     const resultFn = getMockResultFn(mockedQuery);
     const resultFn2 = getMockResultFn(mockedQuery2);
@@ -438,7 +486,7 @@ describe('AssetLiveDataProvider', () => {
 
     render(
       <Test
-        mocks={[mockedQuery, mockedQuery2]}
+        mocks={[mockedQuery, mockedFreshnessQuery, mockedQuery2, mockedFreshnessQuery2]}
         hooks={[
           {keys: assetKeys, thread: 'default', hookResult},
           {keys: assetKeys2, thread: 'context-menu', hookResult: hookResult2},
@@ -477,10 +525,10 @@ describe('AssetLiveDataProvider', () => {
     const chunk3 = assetKeys.slice(2 * BATCH_SIZE, 3 * BATCH_SIZE);
     const chunk4 = assetKeys.slice(3 * BATCH_SIZE, 4 * BATCH_SIZE);
 
-    const mockedQuery = buildMockedAssetGraphLiveQuery(chunk1);
-    const mockedQuery2 = buildMockedAssetGraphLiveQuery(chunk2);
-    const mockedQuery3 = buildMockedAssetGraphLiveQuery(chunk3);
-    const mockedQuery4 = buildMockedAssetGraphLiveQuery(chunk4);
+    const [mockedQuery, mockedFreshnessQuery] = buildMockedAssetGraphLiveQuery(chunk1);
+    const [mockedQuery2, mockedFreshnessQuery2] = buildMockedAssetGraphLiveQuery(chunk2);
+    const [mockedQuery3, mockedFreshnessQuery3] = buildMockedAssetGraphLiveQuery(chunk3);
+    const [mockedQuery4, mockedFreshnessQuery4] = buildMockedAssetGraphLiveQuery(chunk4);
 
     const resultFn = getMockResultFn(mockedQuery);
     const resultFn2 = getMockResultFn(mockedQuery2);
@@ -491,7 +539,16 @@ describe('AssetLiveDataProvider', () => {
 
     render(
       <Test
-        mocks={[mockedQuery, mockedQuery2, mockedQuery3, mockedQuery4]}
+        mocks={[
+          mockedQuery,
+          mockedFreshnessQuery,
+          mockedQuery2,
+          mockedFreshnessQuery2,
+          mockedQuery3,
+          mockedFreshnessQuery3,
+          mockedQuery4,
+          mockedFreshnessQuery4,
+        ]}
         hooks={[{keys: assetKeys, hookResult}]}
       />,
     );

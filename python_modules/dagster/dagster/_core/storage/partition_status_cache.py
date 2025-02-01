@@ -1,5 +1,6 @@
+from collections.abc import Iterable, Sequence
 from enum import Enum
-from typing import TYPE_CHECKING, List, NamedTuple, Optional, Sequence, Set, Tuple
+from typing import TYPE_CHECKING, NamedTuple, Optional
 
 from dagster import (
     AssetKey,
@@ -7,6 +8,8 @@ from dagster import (
     DagsterRunStatus,
     _check as check,
 )
+from dagster._core.asset_graph_view.asset_graph_view import AssetGraphView
+from dagster._core.asset_graph_view.entity_subset import EntitySubset, _ValidatedEntitySubsetValue
 from dagster._core.definitions.multi_dimensional_partitions import (
     MultiPartitionKey,
     MultiPartitionsDefinition,
@@ -19,7 +22,7 @@ from dagster._core.definitions.partition import (
 )
 from dagster._core.definitions.time_window_partitions import TimeWindowPartitionsDefinition
 from dagster._core.instance import DynamicPartitionsStore
-from dagster._core.loader import LoadingContext
+from dagster._core.loader import LoadableBy, LoadingContext
 from dagster._core.storage.dagster_run import FINISHED_STATUSES, RunsFilter
 from dagster._core.storage.tags import (
     MULTIDIMENSIONAL_PARTITION_PREFIX,
@@ -79,7 +82,8 @@ class AssetStatusCacheValue(
             ("serialized_in_progress_partition_subset", Optional[str]),
             ("earliest_in_progress_materialization_event_id", Optional[int]),
         ],
-    )
+    ),
+    LoadableBy[tuple[AssetKey, PartitionsDefinition]],
 ):
     """Set of asset fields that reflect partition materialization status. This is used to display
     global partition status in the asset view.
@@ -121,7 +125,7 @@ class AssetStatusCacheValue(
         check.opt_str_param(
             serialized_in_progress_partition_subset, "serialized_in_progress_partition_subset"
         )
-        return super(AssetStatusCacheValue, cls).__new__(
+        return super().__new__(
             cls,
             latest_storage_id,
             partitions_def_id,
@@ -142,6 +146,12 @@ class AssetStatusCacheValue(
             return None
 
         return cached_data
+
+    @classmethod
+    def _blocking_batch_load(
+        cls, keys: Iterable[tuple[AssetKey, PartitionsDefinition]], context: LoadingContext
+    ) -> Iterable[Optional["AssetStatusCacheValue"]]:
+        return context.instance.event_log_storage.get_asset_status_cache_values(keys, context)
 
     def deserialize_materialized_partition_subsets(
         self, partitions_def: PartitionsDefinition
@@ -167,12 +177,45 @@ class AssetStatusCacheValue(
 
         return partitions_def.deserialize_subset(self.serialized_in_progress_partition_subset)
 
+    def get_materialized_subset(
+        self,
+        asset_graph_view: AssetGraphView,
+        asset_key: AssetKey,
+        partitions_def: PartitionsDefinition,
+    ) -> EntitySubset[AssetKey]:
+        value = self.deserialize_materialized_partition_subsets(partitions_def)
+        return EntitySubset(
+            asset_graph_view, key=asset_key, value=_ValidatedEntitySubsetValue(value)
+        )
+
+    def get_failed_subset(
+        self,
+        asset_graph_view: AssetGraphView,
+        asset_key: AssetKey,
+        partitions_def: PartitionsDefinition,
+    ) -> EntitySubset[AssetKey]:
+        value = self.deserialize_failed_partition_subsets(partitions_def)
+        return EntitySubset(
+            asset_graph_view, key=asset_key, value=_ValidatedEntitySubsetValue(value)
+        )
+
+    def get_in_progress_subset(
+        self,
+        asset_graph_view: AssetGraphView,
+        asset_key: AssetKey,
+        partitions_def: PartitionsDefinition,
+    ) -> EntitySubset[AssetKey]:
+        value = self.deserialize_in_progress_partition_subsets(partitions_def)
+        return EntitySubset(
+            asset_graph_view, key=asset_key, value=_ValidatedEntitySubsetValue(value)
+        )
+
 
 def get_materialized_multipartitions(
     instance: DagsterInstance, asset_key: AssetKey, partitions_def: MultiPartitionsDefinition
 ) -> Sequence[str]:
     dimension_names = partitions_def.partition_dimension_names
-    materialized_keys: List[MultiPartitionKey] = []
+    materialized_keys: list[MultiPartitionKey] = []
     for event_tags in instance.get_event_tags_for_asset(asset_key):
         event_partition_keys_by_dimension = {
             get_dimension_from_partition_tag(key): value
@@ -198,7 +241,7 @@ def get_materialized_multipartitions(
 def get_validated_partition_keys(
     dynamic_partitions_store: DynamicPartitionsStore,
     partitions_def: PartitionsDefinition,
-    partition_keys: Set[str],
+    partition_keys: set[str],
 ):
     if isinstance(partitions_def, (DynamicPartitionsDefinition, StaticPartitionsDefinition)):
         validated_partitions = (
@@ -360,8 +403,8 @@ def build_failed_and_in_progress_partition_subset(
     last_planned_materialization_storage_id: int,
     failed_subset: Optional[PartitionsSubset[str]] = None,
     after_storage_id: Optional[int] = None,
-) -> Tuple[PartitionsSubset, PartitionsSubset, Optional[int]]:
-    in_progress_partitions: Set[str] = set()
+) -> tuple[PartitionsSubset, PartitionsSubset, Optional[int]]:
+    in_progress_partitions: set[str] = set()
 
     incomplete_materializations = {}
 
@@ -376,7 +419,7 @@ def build_failed_and_in_progress_partition_subset(
             asset_key, after_storage_id=after_storage_id
         )
 
-    failed_partitions: Set[str] = set()
+    failed_partitions: set[str] = set()
 
     cursor = None
     if incomplete_materializations:

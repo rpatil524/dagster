@@ -1,5 +1,6 @@
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from typing import Any, Iterator, Mapping, Optional, Sequence, Union
+from typing import Any, Optional, Union
 
 import docker
 import docker.errors
@@ -9,6 +10,7 @@ from dagster import (
 )
 from dagster._annotations import experimental
 from dagster._core.definitions.resource_annotation import TreatAsResourceParam
+from dagster._core.execution.context.asset_execution_context import AssetExecutionContext
 from dagster._core.pipes.client import (
     PipesClient,
     PipesClientCompletedInvocation,
@@ -103,7 +105,7 @@ class PipesDockerClient(PipesClient, TreatAsResourceParam):
     def run(
         self,
         *,
-        context: OpExecutionContext,
+        context: Union[OpExecutionContext, AssetExecutionContext],
         image: str,
         extras: Optional[PipesExtras] = None,
         command: Optional[Union[str, Sequence[str]]] = None,

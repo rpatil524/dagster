@@ -2,12 +2,13 @@ import os
 import signal
 import subprocess
 import sys
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Sequence, Union, cast
+from typing import Any, Optional, Union, cast
 
 import orjson
-from dagster import OpExecutionContext, get_dagster_logger
+from dagster import AssetExecutionContext, OpExecutionContext, get_dagster_logger
 from dagster._annotations import public
 from dagster._core.errors import DagsterExecutionInterruptedError
 from typing_extensions import Literal
@@ -44,23 +45,25 @@ class SdfCliInvocation:
     environment: str
     dagster_sdf_translator: DagsterSdfTranslator
     raise_on_error: bool
-    context: Optional[OpExecutionContext] = field(default=None, repr=False)
+    context: Optional[Union[OpExecutionContext, AssetExecutionContext]] = field(
+        default=None, repr=False
+    )
     termination_timeout_seconds: float = field(
         init=False, default=DAGSTER_SDF_TERMINATION_TIMEOUT_SECONDS
     )
-    _stdout: List[str] = field(init=False, default_factory=list)
+    _stdout: list[str] = field(init=False, default_factory=list)
 
     @classmethod
     def run(
         cls,
         args: Sequence[str],
-        env: Dict[str, str],
+        env: dict[str, str],
         workspace_dir: Path,
         target_dir: Path,
         environment: str,
         dagster_sdf_translator: DagsterSdfTranslator,
         raise_on_error: bool,
-        context: Optional[OpExecutionContext],
+        context: Optional[Union[OpExecutionContext, AssetExecutionContext]],
     ) -> "SdfCliInvocation":
         # Create a subprocess that runs the sdf CLI command.
         process = subprocess.Popen(
@@ -197,7 +200,7 @@ class SdfCliInvocation:
             Literal["makefile-compile.json"],
             Literal["makefile-run.json"],
         ],
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Retrieve an sdf artifact from the target path.
 
         Args:

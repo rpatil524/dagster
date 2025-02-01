@@ -1,4 +1,6 @@
-from typing import AbstractSet, Any, Dict, Mapping, Optional, Sequence, Union, cast
+from collections.abc import Mapping, Sequence
+from functools import cached_property
+from typing import AbstractSet, Any, Optional, Union, cast  # noqa: UP035
 
 from dagster import _check as check
 from dagster._config import (
@@ -52,9 +54,8 @@ from dagster._serdes import create_snapshot_id, deserialize_value, whitelist_for
 from dagster._serdes.serdes import RecordSerializer
 
 
-def create_job_snapshot_id(snapshot: "JobSnap") -> str:
-    check.inst_param(snapshot, "snapshot", JobSnap)
-    return create_snapshot_id(snapshot)
+def _create_job_snapshot_id(job_snap: "JobSnap"):
+    return create_snapshot_id(job_snap)
 
 
 class JobSnapSerializer(RecordSerializer["JobSnap"]):
@@ -75,7 +76,7 @@ class JobSnapSerializer(RecordSerializer["JobSnap"]):
         self,
         context,
         unpacked_dict: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         if unpacked_dict.get("graph_def_name") is None:
             unpacked_dict["graph_def_name"] = unpacked_dict["name"]
         if unpacked_dict.get("metadata") is None:
@@ -157,17 +158,13 @@ class JobSnap(IHaveNew):
         lineage = None
         if job_def.op_selection_data:
             lineage = JobLineageSnap(
-                parent_snapshot_id=create_job_snapshot_id(
-                    cls.from_job_def(job_def.op_selection_data.parent_job_def)
-                ),
+                parent_snapshot_id=job_def.op_selection_data.parent_job_def.get_job_snapshot_id(),
                 op_selection=sorted(job_def.op_selection_data.op_selection),
                 resolved_op_selection=job_def.op_selection_data.resolved_op_selection,
             )
         if job_def.asset_selection_data:
             lineage = JobLineageSnap(
-                parent_snapshot_id=create_job_snapshot_id(
-                    cls.from_job_def(job_def.asset_selection_data.parent_job_def)
-                ),
+                parent_snapshot_id=job_def.asset_selection_data.parent_job_def.get_job_snapshot_id(),
                 asset_selection=job_def.asset_selection_data.asset_selection,
                 asset_check_selection=job_def.asset_selection_data.asset_check_selection,
             )
@@ -186,6 +183,10 @@ class JobSnap(IHaveNew):
             lineage_snapshot=lineage,
             graph_def_name=job_def.graph.name,
         )
+
+    @cached_property
+    def snapshot_id(self) -> str:
+        return _create_job_snapshot_id(self)
 
     def get_node_def_snap(self, node_def_name: str) -> Union[OpDefSnap, GraphDefSnap]:
         check.str_param(node_def_name, "node_def_name")

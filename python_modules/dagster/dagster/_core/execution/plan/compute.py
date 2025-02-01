@@ -1,6 +1,7 @@
 import asyncio
 import inspect
-from typing import Any, AsyncIterator, Iterator, List, Mapping, Sequence, Set, TypeVar, Union
+from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
+from typing import Any, TypeVar, Union
 
 from typing_extensions import TypeAlias
 
@@ -22,11 +23,7 @@ from dagster._core.definitions.op_definition import OpComputeFunction
 from dagster._core.definitions.result import AssetResult, MaterializeResult, ObserveResult
 from dagster._core.errors import DagsterExecutionStepExecutionError, DagsterInvariantViolationError
 from dagster._core.events import DagsterEvent
-from dagster._core.execution.context.compute import (
-    AssetCheckExecutionContext,
-    AssetExecutionContext,
-    OpExecutionContext,
-)
+from dagster._core.execution.context.compute import ExecutionContextTypes
 from dagster._core.execution.context.system import StepExecutionContext
 from dagster._core.execution.plan.outputs import StepOutput, StepOutputProperties
 from dagster._core.execution.plan.utils import op_execution_error_boundary
@@ -59,14 +56,14 @@ def create_step_outputs(
     check.inst_param(handle, "handle", NodeHandle)
 
     # the run config has the node output name configured
-    config_output_names: Set[str] = set()
+    config_output_names: set[str] = set()
     current_handle = handle
     while current_handle:
         op_config = resolved_run_config.ops[str(current_handle)]
         current_handle = current_handle.parent
         config_output_names = config_output_names.union(op_config.outputs.output_names)
 
-    step_outputs: List[StepOutput] = []
+    step_outputs: list[StepOutput] = []
     for name, output_def in node.definition.output_dict.items():
         asset_key = asset_layer.asset_key_for_output(handle, name)
         asset_node = asset_layer.asset_graph.get(asset_key) if asset_key else None
@@ -109,16 +106,14 @@ def _validate_event(event: Any, step_context: StepExecutionContext) -> OpOutputU
         ),
     ):
         raise DagsterInvariantViolationError(
-            (
-                f"Compute function for {step_context.describe_op()} yielded a value of type {type(event)} "
-                "rather than an instance of Output, AssetMaterialization, or ExpectationResult."
-                f" Values yielded by {step_context.op_def.node_type_str}s must be wrapped in one of these types. If your "
-                f"{step_context.op_def.node_type_str} has a single output and yields no other events, you may want to use "
-                f"`return` instead of `yield` in the body of your {step_context.op_def.node_type_str} compute function. If "
-                "you are already using `return`, and you expected to return a value of type "
-                f"{type(event)}, you may be inadvertently returning a generator rather than the value "
-                # f"you expected. Value is {str(event[0])}"
-            )
+            f"Compute function for {step_context.describe_op()} yielded a value of type {type(event)} "
+            "rather than an instance of Output, AssetMaterialization, or ExpectationResult."
+            f" Values yielded by {step_context.op_def.node_type_str}s must be wrapped in one of these types. If your "
+            f"{step_context.op_def.node_type_str} has a single output and yields no other events, you may want to use "
+            f"`return` instead of `yield` in the body of your {step_context.op_def.node_type_str} compute function. If "
+            "you are already using `return`, and you expected to return a value of type "
+            f"{type(event)}, you may be inadvertently returning a generator rather than the value "
+            # f"you expected. Value is {str(event[0])}"
         )
 
     return event
@@ -142,17 +137,15 @@ def _yield_compute_results(
     step_context: StepExecutionContext,
     inputs: Mapping[str, Any],
     compute_fn: OpComputeFunction,
-    compute_context: Union[OpExecutionContext, AssetExecutionContext, AssetCheckExecutionContext],
+    compute_context: ExecutionContextTypes,
 ) -> Iterator[OpOutputUnion]:
     user_event_generator = compute_fn(compute_context, inputs)
 
     if isinstance(user_event_generator, Output):
         raise DagsterInvariantViolationError(
-            (
-                f"Compute function for {step_context.describe_op()} returned an Output rather than "
-                f"yielding it. The compute_fn of the {step_context.op_def.node_type_str} must yield "
-                "its results"
-            )
+            f"Compute function for {step_context.describe_op()} returned an Output rather than "
+            f"yielding it. The compute_fn of the {step_context.op_def.node_type_str} must yield "
+            "its results"
         )
 
     if user_event_generator is None:
@@ -186,7 +179,7 @@ def execute_core_compute(
     step_context: StepExecutionContext,
     inputs: Mapping[str, Any],
     compute_fn: OpComputeFunction,
-    compute_context: Union[OpExecutionContext, AssetExecutionContext, AssetCheckExecutionContext],
+    compute_context: ExecutionContextTypes,
 ) -> Iterator[OpOutputUnion]:
     """Execute the user-specified compute for the op. Wrap in an error boundary and do
     all relevant logging and metrics tracking.

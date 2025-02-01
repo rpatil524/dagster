@@ -267,10 +267,39 @@ class InstanceManagers:
 
         return MarkedManager(_sqlite_asset_instance, [Marks.asset_aware_instance])
 
+    @staticmethod
+    def default_concurrency_sqlite_instance():
+        @contextmanager
+        def _sqlite_with_default_concurrency_instance():
+            with tempfile.TemporaryDirectory() as temp_dir:
+                with instance_for_test(
+                    temp_dir=temp_dir,
+                    overrides={
+                        "scheduler": {
+                            "module": "dagster.utils.test",
+                            "class": "FilesystemTestScheduler",
+                            "config": {"base_dir": temp_dir},
+                        },
+                        "run_coordinator": {
+                            "module": "dagster._core.run_coordinator.queued_run_coordinator",
+                            "class": "QueuedRunCoordinator",
+                        },
+                        "concurrency": {
+                            "default_op_concurrency_limit": 1,
+                        },
+                    },
+                ) as instance:
+                    yield instance
+
+        return MarkedManager(
+            _sqlite_with_default_concurrency_instance,
+            [Marks.sqlite_instance, Marks.queued_run_coordinator],
+        )
+
 
 class EnvironmentManagers:
     @staticmethod
-    def managed_grpc(target=None, location_name="test"):
+    def managed_grpc(target=None, location_name="test_location"):
         @contextmanager
         def _mgr_fn(instance, read_only):
             """Relies on webserver to load the code location in a subprocess and manage its lifecyle."""
@@ -288,7 +317,7 @@ class EnvironmentManagers:
                     )
                     if loadable_target_origin.python_file
                     else ModuleTarget(
-                        module_name=loadable_target_origin.module_name,
+                        module_name=loadable_target_origin.module_name,  # pyright: ignore[reportArgumentType]
                         attribute=loadable_target_origin.attribute,
                         working_directory=loadable_target_origin.working_directory,
                         location_name=location_name,
@@ -302,7 +331,7 @@ class EnvironmentManagers:
         return MarkedManager(_mgr_fn, [Marks.managed_grpc_env])
 
     @staticmethod
-    def deployed_grpc(target=None, location_name="test"):
+    def deployed_grpc(target=None, location_name="test_location"):
         """Launches a code server in a "dagster api grpc" subprocess."""
 
         @contextmanager
@@ -321,7 +350,7 @@ class EnvironmentManagers:
                     GrpcServerTarget(
                         port=api_client.port,
                         socket=api_client.socket,
-                        host=api_client.host,
+                        host=api_client.host,  # pyright: ignore[reportArgumentType]
                         location_name=location_name,
                     ),
                     version="",
@@ -332,7 +361,7 @@ class EnvironmentManagers:
         return MarkedManager(_mgr_fn, [Marks.deployed_grpc_env])
 
     @staticmethod
-    def code_server_cli_grpc(target=None, location_name="test"):
+    def code_server_cli_grpc(target=None, location_name="test_location"):
         """Launches a code server in a "dagster code-server start" subprocess (which will
         in turn open up a `dagster api grpc` subprocess that actually loads the code location).
         """
@@ -341,7 +370,7 @@ class EnvironmentManagers:
         def _mgr_fn(instance, read_only):
             loadable_target_origin = target or get_main_loadable_target_origin()
             with safe_tempfile_path() as socket:
-                subprocess_args = [
+                subprocess_args = [  # pyright: ignore[reportOperatorIssue]
                     "dagster",
                     "code-server",
                     "start",
@@ -399,7 +428,7 @@ class EnvironmentManagers:
                     python_file=file_relative_path(__file__, "repo.py"),
                     attribute="test_dict_repo",
                     working_directory=None,
-                    location_name="test",
+                    location_name="test_location",
                 ),
                 version="",
                 read_only=read_only,
@@ -518,7 +547,9 @@ class GraphQLContextVariant:
         )
 
     @staticmethod
-    def sqlite_with_default_run_launcher_managed_grpc_env(target=None, location_name="test"):
+    def sqlite_with_default_run_launcher_managed_grpc_env(
+        target=None, location_name="test_location"
+    ):
         return GraphQLContextVariant(
             InstanceManagers.sqlite_instance_with_default_run_launcher(),
             EnvironmentManagers.managed_grpc(target, location_name),
@@ -535,7 +566,9 @@ class GraphQLContextVariant:
         )
 
     @staticmethod
-    def sqlite_with_default_run_launcher_deployed_grpc_env(target=None, location_name="test"):
+    def sqlite_with_default_run_launcher_deployed_grpc_env(
+        target=None, location_name="test_location"
+    ):
         return GraphQLContextVariant(
             InstanceManagers.sqlite_instance_with_default_run_launcher(),
             EnvironmentManagers.deployed_grpc(target, location_name),
@@ -543,7 +576,9 @@ class GraphQLContextVariant:
         )
 
     @staticmethod
-    def sqlite_with_default_run_launcher_code_server_cli_env(target=None, location_name="test"):
+    def sqlite_with_default_run_launcher_code_server_cli_env(
+        target=None, location_name="test_location"
+    ):
         return GraphQLContextVariant(
             InstanceManagers.sqlite_instance_with_default_run_launcher(),
             EnvironmentManagers.code_server_cli_grpc(target, location_name),
@@ -551,7 +586,19 @@ class GraphQLContextVariant:
         )
 
     @staticmethod
-    def postgres_with_default_run_launcher_managed_grpc_env(target=None, location_name="test"):
+    def sqlite_with_default_concurrency_managed_grpc_env(
+        target=None, location_name="test_location"
+    ):
+        return GraphQLContextVariant(
+            InstanceManagers.default_concurrency_sqlite_instance(),
+            EnvironmentManagers.managed_grpc(target, location_name),
+            test_id="sqlite_with_default_concurrency_managed_grpc_env",
+        )
+
+    @staticmethod
+    def postgres_with_default_run_launcher_managed_grpc_env(
+        target=None, location_name="test_location"
+    ):
         return GraphQLContextVariant(
             InstanceManagers.postgres_instance_with_default_run_launcher(),
             EnvironmentManagers.managed_grpc(target, location_name),
@@ -559,7 +606,9 @@ class GraphQLContextVariant:
         )
 
     @staticmethod
-    def postgres_with_default_run_launcher_deployed_grpc_env(target=None, location_name="test"):
+    def postgres_with_default_run_launcher_deployed_grpc_env(
+        target=None, location_name="test_location"
+    ):
         return GraphQLContextVariant(
             InstanceManagers.postgres_instance_with_default_run_launcher(),
             EnvironmentManagers.deployed_grpc(target, location_name),
@@ -652,10 +701,11 @@ class GraphQLContextVariant:
             GraphQLContextVariant.non_launchable_postgres_instance_managed_grpc_env(),
             GraphQLContextVariant.non_launchable_postgres_instance_lazy_repository(),
             GraphQLContextVariant.consolidated_sqlite_instance_managed_grpc_env(),
+            GraphQLContextVariant.sqlite_with_default_concurrency_managed_grpc_env(),
         ]
 
     @staticmethod
-    def all_executing_variants(target=None, location_name="test"):
+    def all_executing_variants(target=None, location_name="test_location"):
         return [
             GraphQLContextVariant.sqlite_with_default_run_launcher_managed_grpc_env(
                 target, location_name

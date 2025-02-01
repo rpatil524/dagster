@@ -1,17 +1,6 @@
 from collections import defaultdict
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Dict,
-    Iterable,
-    List,
-    Mapping,
-    NamedTuple,
-    Optional,
-    Sequence,
-    Type,
-    Union,
-)
+from collections.abc import Iterable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Union
 
 from typing_extensions import Self
 
@@ -37,16 +26,12 @@ from dagster._core.definitions.partitioned_schedule import (
 )
 from dagster._core.definitions.repository_definition import (
     SINGLETON_REPOSITORY_NAME,
-    PendingRepositoryDefinition,
     RepositoryDefinition,
 )
 from dagster._core.definitions.schedule_definition import ScheduleDefinition
 from dagster._core.definitions.sensor_definition import SensorDefinition
 from dagster._core.definitions.unresolved_asset_job_definition import UnresolvedAssetJobDefinition
-from dagster._core.definitions.utils import (
-    add_default_automation_condition_sensor,
-    dedupe_object_refs,
-)
+from dagster._core.definitions.utils import dedupe_object_refs
 from dagster._core.errors import DagsterInvariantViolationError
 from dagster._core.execution.build_resources import wrap_resources_for_execution
 from dagster._core.execution.with_resources import with_resources
@@ -76,7 +61,7 @@ def create_repository_using_definitions_args(
     executor: Optional[Union[ExecutorDefinition, Executor]] = None,
     loggers: Optional[Mapping[str, LoggerDefinition]] = None,
     asset_checks: Optional[Iterable[AssetChecksDefinition]] = None,
-) -> Union[RepositoryDefinition, PendingRepositoryDefinition]:
+) -> RepositoryDefinition:
     """Create a named repository using the same arguments as :py:class:`Definitions`. In older
     versions of Dagster, repositories were the mechanism for organizing assets, schedules, sensors,
     and jobs. There could be many repositories per code location. This was a complicated ontology but
@@ -133,7 +118,7 @@ def _io_manager_needs_replacement(job: JobDefinition, resource_defs: Mapping[str
 def _jobs_which_will_have_io_manager_replaced(
     jobs: Optional[Iterable[Union[JobDefinition, UnresolvedAssetJobDefinition]]],
     resource_defs: Mapping[str, Any],
-) -> List[Union[JobDefinition, UnresolvedAssetJobDefinition]]:
+) -> list[Union[JobDefinition, UnresolvedAssetJobDefinition]]:
     """Returns whether any jobs will have their I/O manager replaced by an `io_manager` override from
     the top-level `resource_defs` provided to `Definitions` in 1.3. We will warn users if this is
     the case.
@@ -267,20 +252,13 @@ def _create_repository_using_definitions_args(
     loggers: Optional[Mapping[str, LoggerDefinition]] = None,
     asset_checks: Optional[Iterable[AssetsDefinition]] = None,
     metadata: Optional[RawMetadataMapping] = None,
-) -> Union[RepositoryDefinition, PendingRepositoryDefinition]:
+) -> RepositoryDefinition:
     # First, dedupe all definition types.
     sensors = dedupe_object_refs(sensors)
     jobs = dedupe_object_refs(jobs)
     assets = _canonicalize_specs_to_assets_defs(dedupe_object_refs(assets))
     schedules = dedupe_object_refs(schedules)
     asset_checks = dedupe_object_refs(asset_checks)
-
-    # add in a default automation condition sensor definition if required
-    sensors = add_default_automation_condition_sensor(
-        sensors,
-        [asset for asset in assets if not isinstance(asset, CacheableAssetsDefinition)],
-        asset_checks or [],
-    )
 
     executor_def = (
         executor
@@ -502,10 +480,10 @@ class Definitions(IHaveNew):
         self,
         asset_key: CoercibleToAssetKey,
         *,
-        python_type: Optional[Type] = None,
+        python_type: Optional[type] = None,
         instance: Optional[DagsterInstance] = None,
         partition_key: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: Optional[dict[str, Any]] = None,
     ) -> object:
         """Load the contents of an asset as a Python object.
 
@@ -589,23 +567,7 @@ class Definitions(IHaveNew):
     @cached_method
     def get_repository_def(self) -> RepositoryDefinition:
         """Definitions is implemented by wrapping RepositoryDefinition. Get that underlying object
-        in order to access any functionality which is not exposed on Definitions. This method
-        also resolves a PendingRepositoryDefinition to a RepositoryDefinition.
-        """
-        inner_repository = self.get_inner_repository()
-        return (
-            inner_repository.compute_repository_definition()
-            if isinstance(inner_repository, PendingRepositoryDefinition)
-            else inner_repository
-        )
-
-    @cached_method
-    def get_inner_repository(
-        self,
-    ) -> Union[RepositoryDefinition, PendingRepositoryDefinition]:
-        """This method is used internally to access the inner repository. We explicitly do not want
-        to resolve the pending repo because the entire point is to defer that resolution until
-        later.
+        in order to access any functionality which is not exposed on Definitions.
         """
         return _create_repository_using_definitions_args(
             name=SINGLETON_REPOSITORY_NAME,
@@ -663,7 +625,6 @@ class Definitions(IHaveNew):
             Definitions: The merged definitions.
         """
         check.sequence_param(def_sets, "def_sets", of_type=Definitions)
-
         assets = []
         schedules = []
         sensors = []
@@ -672,9 +633,9 @@ class Definitions(IHaveNew):
         metadata = {}
 
         resources = {}
-        resource_key_indexes: Dict[str, int] = {}
+        resource_key_indexes: dict[str, int] = {}
         loggers = {}
-        logger_key_indexes: Dict[str, int] = {}
+        logger_key_indexes: dict[str, int] = {}
         executor = None
         executor_index: Optional[int] = None
 

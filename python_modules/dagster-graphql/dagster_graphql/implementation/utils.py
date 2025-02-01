@@ -1,27 +1,11 @@
 import functools
 import sys
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime
 from types import TracebackType
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    Dict,
-    Iterable,
-    Iterator,
-    List,
-    Mapping,
-    NamedTuple,
-    Optional,
-    Sequence,
-    Tuple,
-    Type,
-    TypeVar,
-    Union,
-    cast,
-)
+from typing import TYPE_CHECKING, Any, Callable, NamedTuple, Optional, TypeVar, Union, cast
 
 import dagster._check as check
 from dagster._core.definitions.asset_check_spec import AssetCheckKey
@@ -56,7 +40,9 @@ def assert_permission_for_location(
         raise UserFacingGraphQLError(GrapheneUnauthorizedError())
 
 
-def require_permission_check(permission: str) -> Callable[[GrapheneResolverFn], GrapheneResolverFn]:
+def require_permission_check(
+    permission: str,
+) -> Callable[[GrapheneResolverFn], GrapheneResolverFn]:
     def decorator(fn: GrapheneResolverFn) -> GrapheneResolverFn:
         @functools.wraps(fn)
         def _fn(self, graphene_info, *args: P.args, **kwargs: P.kwargs):
@@ -72,7 +58,9 @@ def require_permission_check(permission: str) -> Callable[[GrapheneResolverFn], 
     return decorator
 
 
-def check_permission(permission: str) -> Callable[[GrapheneResolverFn], GrapheneResolverFn]:
+def check_permission(
+    permission: str,
+) -> Callable[[GrapheneResolverFn], GrapheneResolverFn]:
     def decorator(fn: GrapheneResolverFn) -> GrapheneResolverFn:
         @functools.wraps(fn)
         def _fn(self, graphene_info, *args: P.args, **kwargs: P.kwargs):
@@ -102,17 +90,21 @@ def has_permission_for_asset_graph(
     asset_keys = set(asset_selection or [])
     context = cast(BaseWorkspaceRequestContext, graphene_info.context)
 
-    # If any of the asset keys don't map to a location (e.g. because they are no longer in the
-    # graph) need deployment-wide permissions - no valid code location to check
-    if asset_keys.difference(asset_graph.repository_handles_by_key.keys()):
-        return context.has_permission(permission)
-
     if asset_keys:
-        selectors = [asset_graph.get_repository_handle(asset_key) for asset_key in asset_keys]
+        location_names = set()
+        for key in asset_keys:
+            if not asset_graph.has(key):
+                # If any of the asset keys don't map to a location (e.g. because they are no longer in the
+                # graph) need deployment-wide permissions - no valid code location to check
+                return context.has_permission(permission)
+            node = asset_graph.get(key)
+            location_names.add(
+                node.resolve_to_singular_repo_scoped_node().repository_handle.location_name
+            )
     else:
-        selectors = asset_graph.repository_handles_by_key.values()
-
-    location_names = set(s.location_name for s in selectors)
+        location_names = set(
+            handle.location_name for handle in asset_graph.repository_handles_by_key.values()
+        )
 
     if not location_names:
         return context.has_permission(permission)
@@ -196,7 +188,7 @@ def _noop(_) -> None:
 class ErrorCapture:
     @staticmethod
     def default_on_exception(
-        exc_info: Tuple[Type[BaseException], BaseException, TracebackType],
+        exc_info: tuple[type[BaseException], BaseException, TracebackType],
     ) -> "GraphenePythonError":
         from dagster_graphql.schema.errors import GraphenePythonError
 
@@ -246,13 +238,13 @@ class UserFacingGraphQLError(Exception):
             cls=error.__class__.__name__,
             message=error.message if hasattr(error, "message") else None,
         )
-        super(UserFacingGraphQLError, self).__init__(message)
+        super().__init__(message)
 
 
 def pipeline_selector_from_graphql(data: Mapping[str, Any]) -> JobSubsetSelector:
-    asset_selection = cast(Optional[Iterable[Dict[str, List[str]]]], data.get("assetSelection"))
+    asset_selection = cast(Optional[Iterable[dict[str, list[str]]]], data.get("assetSelection"))
     asset_check_selection = cast(
-        Optional[Iterable[Dict[str, Any]]], data.get("assetCheckSelection")
+        Optional[Iterable[dict[str, Any]]], data.get("assetCheckSelection")
     )
     return JobSubsetSelector(
         location_name=data["repositoryLocationName"],
@@ -302,7 +294,7 @@ class ExecutionParams(
     ):
         check.opt_list_param(step_keys, "step_keys", of_type=str)
 
-        return super(ExecutionParams, cls).__new__(
+        return super().__new__(
             cls,
             selector=check.inst_param(selector, "selector", JobSubsetSelector),
             run_config=check.opt_mapping_param(run_config, "run_config", key_type=str),
@@ -341,7 +333,7 @@ class ExecutionMetadata(
         root_run_id: Optional[str] = None,
         parent_run_id: Optional[str] = None,
     ):
-        return super(ExecutionMetadata, cls).__new__(
+        return super().__new__(
             cls,
             check.opt_str_param(run_id, "run_id"),
             check.dict_param(tags, "tags", key_type=str, value_type=str),
@@ -359,14 +351,17 @@ class ExecutionMetadata(
 
 
 def apply_cursor_limit_reverse(
-    items: Sequence[str], cursor: Optional[str], limit: Optional[int], reverse: Optional[bool]
+    items: Sequence[str],
+    cursor: Optional[str],
+    limit: Optional[int],
+    reverse: Optional[bool],
 ) -> Sequence[str]:
     start = 0
     end = len(items)
     index = 0
 
     if cursor:
-        index = next((idx for (idx, item) in enumerate(items) if item == cursor))
+        index = next(idx for (idx, item) in enumerate(items) if item == cursor)
 
         if reverse:
             end = index

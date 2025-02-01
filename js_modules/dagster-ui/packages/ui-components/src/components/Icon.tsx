@@ -2,6 +2,7 @@ import * as React from 'react';
 import styled from 'styled-components';
 
 import {Colors} from './Color';
+import abc from '../icon-svgs/abc.svg';
 import account_circle from '../icon-svgs/account_circle.svg';
 import account_tree from '../icon-svgs/account_tree.svg';
 import add from '../icon-svgs/add.svg';
@@ -26,9 +27,9 @@ import asset_plot from '../icon-svgs/asset_plot.svg';
 import assignment from '../icon-svgs/assignment.svg';
 import assignment_turned_in from '../icon-svgs/assignment_turned_in.svg';
 import attach_file from '../icon-svgs/attach_file.svg';
-import auto_materialize_policy from '../icon-svgs/auto_materialize_policy.svg';
 import auto_observe from '../icon-svgs/auto_observe.svg';
 import automation from '../icon-svgs/automation.svg';
+import automation_condition from '../icon-svgs/automation_condition.svg';
 import backfill from '../icon-svgs/backfill.svg';
 import badge from '../icon-svgs/badge.svg';
 import bar_chart from '../icon-svgs/bar_chart.svg';
@@ -95,12 +96,14 @@ import cpu from '../icon-svgs/cpu.svg';
 import create from '../icon-svgs/create.svg';
 import credit_card from '../icon-svgs/credit_card.svg';
 import credits from '../icon-svgs/credits.svg';
+import curly_braces from '../icon-svgs/curly_braces.svg';
 import daemon from '../icon-svgs/daemon.svg';
 import dagster_primary from '../icon-svgs/dagster_primary.svg';
 import dagster_reversed from '../icon-svgs/dagster_reversed.svg';
 import dagster_solid from '../icon-svgs/dagster_solid.svg';
 import dagsterlabs from '../icon-svgs/dagsterlabs.svg';
 import dash from '../icon-svgs/dash.svg';
+import data_object from '../icon-svgs/data_object.svg';
 import data_reliability from '../icon-svgs/data_reliability.svg';
 import data_type from '../icon-svgs/data_type.svg';
 import database from '../icon-svgs/database.svg';
@@ -198,6 +201,7 @@ import key_command from '../icon-svgs/key_command.svg';
 import key_option from '../icon-svgs/key_option.svg';
 import key_return from '../icon-svgs/key_return.svg';
 import key_shift from '../icon-svgs/key_shift.svg';
+import label from '../icon-svgs/label.svg';
 import launch from '../icon-svgs/launch.svg';
 import launchpad from '../icon-svgs/launchpad.svg';
 import layers from '../icon-svgs/layers.svg';
@@ -219,6 +223,8 @@ import logout from '../icon-svgs/logout.svg';
 import logs_stderr from '../icon-svgs/logs_stderr.svg';
 import logs_stdout from '../icon-svgs/logs_stdout.svg';
 import logs_structured from '../icon-svgs/logs_structured.svg';
+import magnify_glass from '../icon-svgs/magnify_glass.svg';
+import magnify_glass_checked from '../icon-svgs/magnify_glass_checked.svg';
 import materialization from '../icon-svgs/materialization.svg';
 import materialization_event from '../icon-svgs/materialization_event.svg';
 import materialization_planned from '../icon-svgs/materialization_planned.svg';
@@ -267,6 +273,7 @@ import password from '../icon-svgs/password.svg';
 import pause from '../icon-svgs/pause.svg';
 import people from '../icon-svgs/people.svg';
 import plots from '../icon-svgs/plots.svg';
+import preview_tick from '../icon-svgs/preview_tick.svg';
 import priority_1 from '../icon-svgs/priority_1.svg';
 import priority_2 from '../icon-svgs/priority_2.svg';
 import priority_3 from '../icon-svgs/priority_3.svg';
@@ -400,6 +407,7 @@ export const Icons = {
   op_dynamic,
   new: new_svg,
   //Core Icons
+  abc,
   account_circle,
   account_tree,
   add,
@@ -424,7 +432,7 @@ export const Icons = {
   assignment,
   assignment_turned_in,
   attach_file,
-  auto_materialize_policy,
+  automation_condition,
   auto_observe,
   automation,
   backfill,
@@ -493,6 +501,7 @@ export const Icons = {
   create,
   credit_card,
   credits,
+  curly_braces,
   daemon,
   dagster_primary,
   dagster_reversed,
@@ -501,6 +510,7 @@ export const Icons = {
   dash,
   data_reliability,
   data_type,
+  data_object,
   database,
   datatype_array,
   datatype_bool,
@@ -596,6 +606,7 @@ export const Icons = {
   key_option,
   key_return,
   key_shift,
+  label,
   launch,
   launchpad,
   layers,
@@ -617,6 +628,8 @@ export const Icons = {
   logs_stderr,
   logs_stdout,
   logs_structured,
+  magnify_glass,
+  magnify_glass_checked,
   materialization,
   materialization_event,
   materialization_planned,
@@ -662,6 +675,7 @@ export const Icons = {
   pause,
   people,
   plots,
+  preview_tick,
   priority_1,
   priority_2,
   priority_3,

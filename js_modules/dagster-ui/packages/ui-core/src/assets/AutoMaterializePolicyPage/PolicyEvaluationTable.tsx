@@ -1,4 +1,14 @@
-import {Box, Button, Colors, Dialog, Icon, Table, Tooltip} from '@dagster-io/ui-components';
+import {
+  Box,
+  Button,
+  ButtonLink,
+  Colors,
+  Dialog,
+  DialogFooter,
+  Icon,
+  Table,
+  Tooltip,
+} from '@dagster-io/ui-components';
 import {useCallback, useMemo, useState} from 'react';
 import styled, {css} from 'styled-components';
 
@@ -22,7 +32,7 @@ import {AssetEventMetadataEntriesTable} from '../AssetEventMetadataEntriesTable'
 interface Props {
   assetKeyPath: string[] | null;
   evaluationNodes: Evaluation[];
-  evaluationId: number;
+  evaluationId: string;
   rootUniqueId: string;
   isLegacyEvaluation: boolean;
   selectPartition: (partitionKey: string | null) => void;
@@ -111,7 +121,7 @@ const NewPolicyEvaluationTable = ({
   toggleExpanded,
 }: {
   assetKeyPath: string[] | null;
-  evaluationId: number;
+  evaluationId: string;
   expandedRecords: Set<string>;
   toggleExpanded: (id: string) => void;
   flattenedRecords: FlattenedConditionEvaluation<NewEvaluationNodeFragment>[];
@@ -131,7 +141,7 @@ const NewPolicyEvaluationTable = ({
       <tbody>
         {flattenedRecords.map(({evaluation, id, parentId, depth, type}) => {
           const {userLabel, uniqueId, numTrue, numCandidates, expandedLabel} = evaluation;
-          const anyCandidatePartitions = typeof numCandidates === 'number' && numCandidates > 0;
+          const anyCandidatePartitions = numCandidates === null || numCandidates > 0;
           const status =
             numTrue === 0 && !anyCandidatePartitions
               ? AssetConditionEvaluationStatus.SKIPPED
@@ -205,7 +215,7 @@ const NewPolicyEvaluationTable = ({
                   <PolicyEvaluationStatusTag status={status} />
                 </td>
               )}
-              {isPartitioned ? <td>{numCandidates || '0'}</td> : null}
+              {isPartitioned ? <td>{numCandidates === null ? 'All' : numCandidates}</td> : null}
               <td>
                 {startTimestamp && endTimestamp ? (
                   <TimeElapsed startUnix={startTimestamp} endUnix={endTimestamp} showMsec />
@@ -318,15 +328,20 @@ const ViewDetailsButton = ({
           setShowDetails(false);
         }}
       >
-        <AssetEventMetadataEntriesTable showDescriptions event={evaluation} repoAddress={null} />
+        <Box padding={8}>
+          <AssetEventMetadataEntriesTable showDescriptions event={evaluation} repoAddress={null} />
+        </Box>
+        <DialogFooter>
+          <Button onClick={() => setShowDetails(false)}>Done</Button>
+        </DialogFooter>
       </Dialog>
-      <Button
+      <ButtonLink
         onClick={() => {
           setShowDetails(true);
         }}
       >
         View details
-      </Button>
+      </ButtonLink>
     </>
   );
 };
@@ -343,7 +358,7 @@ export const PartitionedPolicyEvaluationTable = ({
   selectPartition,
 }: {
   assetKeyPath: string[] | null;
-  evaluationId: number;
+  evaluationId: string;
   rootUniqueId: string;
   flattenedRecords: FlattenedConditionEvaluation<PartitionedAssetConditionEvaluationNodeFragment>[];
   expandedRecords: Set<string>;

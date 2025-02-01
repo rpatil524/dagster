@@ -1,7 +1,9 @@
 import datetime
+import inspect
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Generic, Mapping, Optional, Type, TypeVar
+from typing import TYPE_CHECKING, Generic, Optional, TypeVar
 
 import dagster._check as check
 from dagster._core.asset_graph_view.asset_graph_view import AssetGraphView, TemporalContext
@@ -9,6 +11,7 @@ from dagster._core.asset_graph_view.entity_subset import EntitySubset
 from dagster._core.definitions.asset_key import AssetCheckKey, AssetKey, EntityKey, T_EntityKey
 from dagster._core.definitions.declarative_automation.automation_condition import (
     AutomationCondition,
+    AutomationResult,
 )
 from dagster._core.definitions.declarative_automation.legacy.legacy_context import (
     LegacyRuleEvaluationContext,
@@ -108,6 +111,11 @@ class AutomationContext(Generic[T_EntityKey]):
             else None,
             _root_log=self._root_log,
         )
+
+    async def evaluate_async(self) -> AutomationResult[T_EntityKey]:
+        if inspect.iscoroutinefunction(self.condition.evaluate):
+            return await self.condition.evaluate(self)
+        return self.condition.evaluate(self)
 
     @property
     def log(self) -> logging.Logger:
@@ -239,7 +247,7 @@ class AutomationContext(Generic[T_EntityKey]):
         return self.asset_graph_view.get_empty_subset(key=self.key)
 
     def get_structured_cursor(
-        self, as_type: Type[T_StructuredCursor]
+        self, as_type: type[T_StructuredCursor]
     ) -> Optional[T_StructuredCursor]:
         return (
             self._node_cursor.get_structured_cursor(as_type=as_type) if self._node_cursor else None

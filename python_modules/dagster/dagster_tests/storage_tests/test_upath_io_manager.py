@@ -1,10 +1,9 @@
 import inspect
 import json
 import pickle
-import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Optional, cast
 
 import fsspec
 import pytest
@@ -56,11 +55,11 @@ class DummyIOManager(UPathIOManager):
 
 
 class PickleIOManager(UPathIOManager):
-    def dump_to_path(self, context: OutputContext, obj: List, path: UPath):
+    def dump_to_path(self, context: OutputContext, obj: list, path: UPath):
         with path.open("wb") as file:
             pickle.dump(obj, file)
 
-    def load_from_path(self, context: InputContext, path: UPath) -> List:
+    def load_from_path(self, context: InputContext, path: UPath) -> list:
         with path.open("rb") as file:
             return pickle.load(file)
 
@@ -137,11 +136,11 @@ def test_upath_io_manager_with_json(tmp_path: Path, json_data: Any):
 
 def test_upath_io_manager_with_non_any_type_annotation(tmp_path: Path):
     class MyIOManager(UPathIOManager):
-        def dump_to_path(self, context: OutputContext, obj: List, path: UPath):
+        def dump_to_path(self, context: OutputContext, obj: list, path: UPath):
             with path.open("wb") as file:
                 pickle.dump(obj, file)
 
-        def load_from_path(self, context: InputContext, path: UPath) -> List:
+        def load_from_path(self, context: InputContext, path: UPath) -> list:
             with path.open("rb") as file:
                 return pickle.load(file)
 
@@ -196,7 +195,7 @@ def test_upath_io_manager_multiple_time_partitions(
     @asset(
         partitions_def=daily,
     )
-    def downstream_asset(upstream_asset: Dict[str, str]) -> Dict[str, str]:
+    def downstream_asset(upstream_asset: dict[str, str]) -> dict[str, str]:
         return upstream_asset
 
     result = materialize(
@@ -216,7 +215,7 @@ def test_upath_io_manager_multiple_static_partitions(dummy_io_manager: DummyIOMa
         return context.partition_key
 
     @asset(ins={"upstream_asset": AssetIn(partition_mapping=AllPartitionMapping())})
-    def downstream_asset(upstream_asset: Dict[str, str]) -> Dict[str, str]:
+    def downstream_asset(upstream_asset: dict[str, str]) -> dict[str, str]:
         return upstream_asset
 
     result = materialize(
@@ -266,7 +265,7 @@ def test_upath_io_manager_multiple_partitions_from_non_partitioned_run(tmp_path:
         ins={"upstream_asset": AssetIn(partition_mapping=AllPartitionMapping())},
         io_manager_def=my_io_manager,
     )
-    def downstream_asset(upstream_asset: Dict[str, str]) -> Dict[str, str]:
+    def downstream_asset(upstream_asset: dict[str, str]) -> dict[str, str]:
         return upstream_asset
 
     for partition_key in ["A", "B"]:
@@ -287,7 +286,7 @@ def test_upath_io_manager_static_partitions_with_dot():
     dumped_path: Optional[UPath] = None
 
     class TrackingIOManager(UPathIOManager):
-        def dump_to_path(self, context: OutputContext, obj: List, path: UPath):
+        def dump_to_path(self, context: OutputContext, obj: list, path: UPath):
             nonlocal dumped_path
             dumped_path = path
 
@@ -324,7 +323,7 @@ def test_upath_io_manager_with_extension_static_partitions_with_dot():
     class TrackingIOManager(UPathIOManager):
         extension = ".ext"
 
-        def dump_to_path(self, context: OutputContext, obj: List, path: UPath):
+        def dump_to_path(self, context: OutputContext, obj: list, path: UPath):
             nonlocal dumped_path
             dumped_path = path
 
@@ -436,7 +435,7 @@ def test_upath_io_manager_custom_metadata(tmp_path: Path, json_data: Any):
         def load_from_path(self, context: InputContext, path: UPath) -> Any:
             return
 
-        def get_metadata(self, context: OutputContext, obj: Any) -> Dict[str, MetadataValue]:
+        def get_metadata(self, context: OutputContext, obj: Any) -> dict[str, MetadataValue]:
             return {"length": MetadataValue.int(get_length(obj))}
 
     @io_manager(config_schema={"base_path": Field(str, is_required=False)})
@@ -465,7 +464,7 @@ def test_upath_io_manager_custom_metadata(tmp_path: Path, json_data: Any):
 
 
 class AsyncJSONIOManager(ConfigurableIOManager, UPathIOManager):
-    base_dir: str = PydanticField(None, description="Base directory for storing files.")
+    base_dir: str = PydanticField(None, description="Base directory for storing files.")  # type: ignore
 
     _base_path: UPath = PrivateAttr()
 
@@ -513,11 +512,7 @@ class AsyncJSONIOManager(ConfigurableIOManager, UPathIOManager):
             )
 
 
-requires_python38 = pytest.mark.skipif(sys.version_info < (3, 8), reason="requires python3.8")
-
-
 @pytest.mark.parametrize("json_data", [0, 0.0, [0, 1, 2], {"a": 0}, [{"a": 0}, {"b": 1}, {"c": 2}]])
-@requires_python38
 def test_upath_io_manager_async_load_from_path(tmp_path: Path, json_data: Any):
     manager = AsyncJSONIOManager(base_dir=str(tmp_path))
 
@@ -538,7 +533,6 @@ def test_upath_io_manager_async_load_from_path(tmp_path: Path, json_data: Any):
     assert result.output_for_node("partitioned_asset") == "a"
 
 
-@requires_python38
 def test_upath_io_manager_async_multiple_time_partitions(
     tmp_path: Path,
     daily: DailyPartitionsDefinition,
@@ -557,7 +551,7 @@ def test_upath_io_manager_async_multiple_time_partitions(
             "upstream_asset": AssetIn(partition_mapping=TimeWindowPartitionMapping(start_offset=-1))
         },
     )
-    def downstream_asset(upstream_asset: Dict[str, str]):
+    def downstream_asset(upstream_asset: dict[str, str]):
         return upstream_asset
 
     for days in range(2):
@@ -574,7 +568,6 @@ def test_upath_io_manager_async_multiple_time_partitions(
     assert len(downstream_asset_data) == 2, "downstream day should map to 2 upstream days"
 
 
-@requires_python38
 def test_upath_io_manager_async_fail_on_missing_partitions(
     tmp_path: Path,
     daily: DailyPartitionsDefinition,
@@ -593,7 +586,7 @@ def test_upath_io_manager_async_fail_on_missing_partitions(
             "upstream_asset": AssetIn(partition_mapping=TimeWindowPartitionMapping(start_offset=-1))
         },
     )
-    def downstream_asset(upstream_asset: Dict[str, str]):
+    def downstream_asset(upstream_asset: dict[str, str]):
         return upstream_asset
 
     materialize(
@@ -608,7 +601,6 @@ def test_upath_io_manager_async_fail_on_missing_partitions(
         )
 
 
-@requires_python38
 def test_upath_io_manager_async_allow_missing_partitions(
     tmp_path: Path,
     daily: DailyPartitionsDefinition,
@@ -630,7 +622,7 @@ def test_upath_io_manager_async_allow_missing_partitions(
             )
         },
     )
-    def downstream_asset(upstream_asset: Dict[str, str]):
+    def downstream_asset(upstream_asset: dict[str, str]):
         return upstream_asset
 
     materialize(

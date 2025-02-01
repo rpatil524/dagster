@@ -1,9 +1,11 @@
-from typing import Iterator, List, Optional, cast
+from collections.abc import Iterator
+from typing import Optional, cast
 
 import kubernetes.config
 from dagster import (
     Field,
     IntSource,
+    Map,
     Noneable,
     StringSource,
     _check as check,
@@ -72,6 +74,12 @@ _K8S_EXECUTOR_CONFIG_SCHEMA = merge_dicts(
             USER_DEFINED_K8S_JOB_CONFIG_SCHEMA,
             is_required=False,
             description="Raw Kubernetes configuration for each step launched by the executor.",
+        ),
+        "per_step_k8s_config": Field(
+            Map(str, USER_DEFINED_K8S_JOB_CONFIG_SCHEMA, key_label_name="step_name"),
+            is_required=False,
+            default_value={},
+            description="Per op k8s configuration overrides.",
         ),
     },
 )
@@ -161,6 +169,7 @@ def k8s_job_executor(init_context: InitExecutorContext) -> Executor:
             container_context=k8s_container_context,
             load_incluster_config=load_incluster_config,
             kubeconfig_file=kubeconfig_file,
+            per_step_k8s_config=exc_cfg.get("per_step_k8s_config", {}),
         ),
         retries=RetryMode.from_config(exc_cfg["retries"]),  # type: ignore
         max_concurrent=check.opt_int_elem(exc_cfg, "max_concurrent"),
@@ -181,6 +190,7 @@ class K8sStepHandler(StepHandler):
         load_incluster_config: bool,
         kubeconfig_file: Optional[str],
         k8s_client_batch_api=None,
+        per_step_k8s_config=None,
     ):
         super().__init__()
 
@@ -202,10 +212,13 @@ class K8sStepHandler(StepHandler):
         self._api_client = DagsterKubernetesClient.production_client(
             batch_api_override=k8s_client_batch_api
         )
+        self._per_step_k8s_config = check.opt_dict_param(
+            per_step_k8s_config, "per_step_k8s_config", key_type=str, value_type=dict
+        )
 
     def _get_step_key(self, step_handler_context: StepHandlerContext) -> str:
         step_keys_to_execute = cast(
-            List[str], step_handler_context.execute_step_args.step_keys_to_execute
+            list[str], step_handler_context.execute_step_args.step_keys_to_execute
         )
         assert len(step_keys_to_execute) == 1, "Launching multiple steps is not currently supported"
         return step_keys_to_execute[0]
@@ -225,7 +238,15 @@ class K8sStepHandler(StepHandler):
         user_defined_k8s_config = get_user_defined_k8s_config(
             step_handler_context.step_tags[step_key]
         )
-        return context.merge(K8sContainerContext(run_k8s_config=user_defined_k8s_config))
+        step_context = step_handler_context.get_step_context(step_key)
+        op_name = step_context.step.op_name
+        per_op_override = UserDefinedDagsterK8sConfig.from_dict(
+            self._per_step_k8s_config.get(op_name, {})
+        )
+
+        return context.merge(K8sContainerContext(run_k8s_config=user_defined_k8s_config)).merge(
+            K8sContainerContext(run_k8s_config=per_op_override)
+        )
 
     def _get_k8s_step_job_name(self, step_handler_context: StepHandlerContext):
         step_key = self._get_step_key(step_handler_context)
@@ -238,9 +259,9 @@ class K8sStepHandler(StepHandler):
         if step_handler_context.execute_step_args.known_state:
             retry_state = step_handler_context.execute_step_args.known_state.get_retry_state()
             if retry_state.get_attempt_count(step_key):
-                return "dagster-step-%s-%d" % (name_key, retry_state.get_attempt_count(step_key))
+                return "dagster-step-%s-%d" % (name_key, retry_state.get_attempt_count(step_key))  # noqa: UP031
 
-        return "dagster-step-%s" % (name_key)
+        return f"dagster-step-{name_key}"
 
     def launch_step(self, step_handler_context: StepHandlerContext) -> Iterator[DagsterEvent]:
         step_key = self._get_step_key(step_handler_context)
@@ -313,7 +334,7 @@ class K8sStepHandler(StepHandler):
         container_context = self._get_container_context(step_handler_context)
 
         status = self._api_client.get_job_status(
-            namespace=container_context.namespace,
+            namespace=container_context.namespace,  # pyright: ignore[reportArgumentType]
             job_name=job_name,
         )
         if not status:

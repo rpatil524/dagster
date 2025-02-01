@@ -6,9 +6,10 @@ import os
 import string
 import time
 from collections import OrderedDict
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from copy import deepcopy
-from typing import Iterator, List, Mapping, Optional, Sequence, Tuple, TypeVar, Union
+from typing import Optional, TypeVar, Union
 
 from dagster import (
     Any,
@@ -68,8 +69,8 @@ from dagster import (
     dagster_type_loader,
     daily_partitioned_config,
     define_asset_job,
-    freshness_policy_sensor,
     graph,
+    graph_asset,
     job,
     logger,
     multi_asset,
@@ -132,7 +133,7 @@ LONG_INT = 2875972244  # 32b unsigned, > 32b signed
 
 @dagster_type_loader(String)
 def df_input_schema(_context, path: str) -> Sequence[OrderedDict]:
-    with open(path, "r", encoding="utf8") as fd:
+    with open(path, encoding="utf8") as fd:
         return [OrderedDict(sorted(x.items(), key=lambda x: x[0])) for x in csv.DictReader(fd)]
 
 
@@ -503,7 +504,7 @@ def scalar_output_job():
     def return_bool():
         return True
 
-    @op(out=Out(Any))
+    @op(out=Out(Any))  # pyright: ignore[reportArgumentType]
     def return_any():
         return "dkjfkdjfe"
 
@@ -621,16 +622,16 @@ def foo_logger(init_context):
     return logger_
 
 
-@logger({"log_level": Field(str), "prefix": Field(str)})
+@logger({"log_level": Field(str), "prefix": Field(str)})  # pyright: ignore[reportArgumentType]
 def bar_logger(init_context):
     class BarLogger(logging.Logger):
         def __init__(self, name, prefix, *args, **kwargs):
             self.prefix = prefix
-            super(BarLogger, self).__init__(name, *args, **kwargs)
+            super().__init__(name, *args, **kwargs)
 
         def log(self, lvl, msg, *args, **kwargs):
             msg = self.prefix + msg
-            super(BarLogger, self).log(lvl, msg, *args, **kwargs)
+            super().log(lvl, msg, *args, **kwargs)
 
     logger_ = BarLogger("bar", init_context.logger_config["prefix"])
     logger_.setLevel(coerce_valid_log_level(init_context.logger_config["log_level"]))
@@ -765,7 +766,7 @@ def eventually_successful():
         return depth
 
     @op
-    def collect(fan_in: List[int]):
+    def collect(fan_in: list[int]):
         if fan_in != [1, 2, 3]:
             raise Exception(f"Fan in failed, expected [1, 2, 3] got {fan_in}")
 
@@ -1240,10 +1241,6 @@ def define_sensors():
     def many_asset_sensor(_):
         pass
 
-    @freshness_policy_sensor(asset_selection=AssetSelection.all())
-    def fresh_sensor(_):
-        pass
-
     @run_failure_sensor
     def the_failure_sensor():
         pass
@@ -1254,7 +1251,7 @@ def define_sensors():
 
     auto_materialize_sensor = AutomationConditionSensorDefinition(
         "my_auto_materialize_sensor",
-        asset_selection=AssetSelection.assets(
+        target=AssetSelection.assets(
             "fresh_diamond_bottom",
             "asset_with_automation_condition",
             "asset_with_custom_automation_condition",
@@ -1276,7 +1273,6 @@ def define_sensors():
         run_status,
         single_asset_sensor,
         many_asset_sensor,
-        fresh_sensor,
         the_failure_sensor,
         auto_materialize_sensor,
         every_asset_sensor,
@@ -1406,6 +1402,15 @@ def hanging_op(context, my_op):
         time.sleep(0.1)
 
 
+@job(
+    partitions_def=integers_partitions,
+    config=integers_config,
+    resource_defs={"hanging_asset_resource": hanging_asset_resource},
+)
+def hanging_partitioned_job():
+    hanging_op(my_op())
+
+
 @op
 def never_runs_op(hanging_op):
     pass
@@ -1456,8 +1461,12 @@ executable_test_job = define_asset_job(name="executable_test_job", selection=[ex
 static_partitions_def = StaticPartitionsDefinition(["a", "b", "c", "d", "e", "f"])
 
 
+@asset
+def not_included_asset(): ...
+
+
 @asset(partitions_def=static_partitions_def)
-def upstream_static_partitioned_asset():
+def upstream_static_partitioned_asset(not_included_asset):
     return 1
 
 
@@ -1744,7 +1753,7 @@ def ungrouped_asset_5():
 
 
 @multi_asset(outs={"int_asset": AssetOut(), "str_asset": AssetOut()})
-def typed_multi_asset() -> Tuple[int, str]:
+def typed_multi_asset() -> tuple[int, str]:
     return (1, "yay")
 
 
@@ -1990,6 +1999,37 @@ checked_multi_asset_job = define_asset_job(
 )
 
 
+@asset(pool="foo")
+def concurrency_asset():
+    pass
+
+
+@op(pool="bar")
+def concurrency_op_1():
+    pass
+
+
+@op(pool="baz")
+def concurrency_op_2(input_1):
+    return input_1
+
+
+@graph_asset
+def concurrency_graph_asset():
+    return concurrency_op_2(concurrency_op_1())
+
+
+@multi_asset(
+    specs=[
+        AssetSpec("concurrency_multi_asset_1"),
+        AssetSpec("concurrency_multi_asset_2"),
+    ],
+    pool="buzz",
+)
+def concurrency_multi_asset():
+    pass
+
+
 # These are defined separately because the dict repo does not handle unresolved asset jobs
 def define_asset_jobs() -> Sequence[UnresolvedAssetJobDefinition]:
     return [
@@ -2038,6 +2078,7 @@ def define_standard_jobs() -> Sequence[JobDefinition]:
         hard_failer,
         hello_world_with_tags,
         infinite_loop_job,
+        hanging_partitioned_job,
         integers,
         job_with_default_config,
         job_with_enum_config,
@@ -2095,6 +2136,7 @@ def define_assets():
         upstream_daily_partitioned_asset,
         downstream_weekly_partitioned_asset,
         unpartitioned_upstream_of_partitioned,
+        not_included_asset,
         upstream_static_partitioned_asset,
         middle_static_partitioned_asset_1,
         middle_static_partitioned_asset_2,
@@ -2137,6 +2179,9 @@ def define_assets():
         asset_with_compute_storage_kinds,
         asset_with_automation_condition,
         asset_with_custom_automation_condition,
+        concurrency_asset,
+        concurrency_graph_asset,
+        concurrency_multi_asset,
     ]
 
 

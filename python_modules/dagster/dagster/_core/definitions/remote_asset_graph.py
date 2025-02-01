@@ -2,23 +2,17 @@ import itertools
 import warnings
 from abc import ABC, abstractmethod
 from collections import defaultdict
+from collections.abc import Iterable, Mapping, Sequence
 from functools import cached_property
-from typing import (
+from typing import (  # noqa: UP035
     TYPE_CHECKING,
     AbstractSet,
-    Dict,
+    Annotated,
     Generic,
-    Iterable,
-    List,
-    Mapping,
     Optional,
-    Sequence,
-    Set,
     TypeVar,
     Union,
 )
-
-from typing_extensions import Annotated
 
 import dagster._check as check
 from dagster._core.definitions.asset_check_spec import AssetCheckKey
@@ -52,6 +46,7 @@ if TYPE_CHECKING:
     from dagster._core.remote_representation.external_data import AssetCheckNodeSnap, AssetNodeSnap
 
 
+@whitelist_for_serdes
 @record
 class RemoteAssetCheckNode:
     handle: RepositoryHandle
@@ -84,6 +79,10 @@ class RemoteAssetNode(BaseAssetNode, ABC):
     @property
     def metadata(self) -> ArbitraryMetadataMapping:
         return self.resolve_to_singular_repo_scoped_node().asset_node_snap.metadata
+
+    @property
+    def pools(self) -> Optional[set[str]]:
+        return self.resolve_to_singular_repo_scoped_node().pools
 
     @property
     def tags(self) -> Mapping[str, str]:
@@ -192,6 +191,10 @@ class RemoteRepositoryAssetNode(RemoteAssetNode):
     def auto_observe_interval_minutes(self) -> Optional[float]:
         return self.asset_node_snap.auto_observe_interval_minutes
 
+    @property
+    def pools(self) -> Optional[set[str]]:
+        return self.asset_node_snap.pools
+
 
 @whitelist_for_serdes
 @record
@@ -272,6 +275,13 @@ class RemoteWorkspaceAssetNode(RemoteAssetNode):
     @cached_property
     def is_executable(self) -> bool:
         return any(node.asset_node.is_executable for node in self.repo_scoped_asset_infos)
+
+    @cached_property
+    def pools(self) -> Optional[set[str]]:
+        pools = set()
+        for info in self.repo_scoped_asset_infos:
+            pools.update(info.asset_node.pools or set())
+        return pools
 
     @property
     def partition_mappings(self) -> Mapping[AssetKey, PartitionMapping]:
@@ -383,11 +393,9 @@ class RemoteWorkspaceAssetNode(RemoteAssetNode):
     def _observable_node_snap(self) -> "AssetNodeSnap":
         try:
             return next(
-                (
-                    info.asset_node.asset_node_snap
-                    for info in self.repo_scoped_asset_infos
-                    if info.asset_node.is_observable
-                )
+                info.asset_node.asset_node_snap
+                for info in self.repo_scoped_asset_infos
+                if info.asset_node.is_observable
             )
         except StopIteration:
             check.failed("No observable node found")
@@ -403,7 +411,9 @@ class RemoteAssetGraph(BaseAssetGraph[TRemoteAssetNode], ABC, Generic[TRemoteAss
 
     @property
     @abstractmethod
-    def remote_asset_check_nodes_by_key(self) -> Mapping[AssetCheckKey, RemoteAssetCheckNode]: ...
+    def remote_asset_check_nodes_by_key(
+        self,
+    ) -> Mapping[AssetCheckKey, RemoteAssetCheckNode]: ...
 
     ##### COMMON ASSET GRAPH INTERFACE
     @cached_property
@@ -431,6 +441,30 @@ class RemoteAssetGraph(BaseAssetGraph[TRemoteAssetNode], ABC, Generic[TRemoteAss
     @property
     def asset_checks(self) -> Sequence["AssetCheckNodeSnap"]:
         return [node.asset_check for node in self.remote_asset_check_nodes_by_key.values()]
+
+    @cached_property
+    def _asset_check_nodes_by_asset_key(self) -> Mapping[AssetKey, Sequence[RemoteAssetCheckNode]]:
+        by_asset_key = {}
+        for node in self.remote_asset_check_nodes_by_key.values():
+            by_asset_key.setdefault(node.asset_check.asset_key, []).append(node)
+        return by_asset_key
+
+    def get_checks_for_asset(self, asset_key: AssetKey) -> Sequence[RemoteAssetCheckNode]:
+        return self._asset_check_nodes_by_asset_key.get(asset_key, [])
+
+    def get_check_keys_for_assets(
+        self, asset_keys: AbstractSet[AssetKey]
+    ) -> AbstractSet[AssetCheckKey]:
+        return (
+            set().union(
+                *(
+                    {check.asset_check.key for check in self.get_checks_for_asset(asset_key)}
+                    for asset_key in asset_keys
+                )
+            )
+            if asset_keys
+            else set()
+        )
 
     @cached_property
     def asset_check_keys(self) -> AbstractSet[AssetCheckKey]:
@@ -484,17 +518,17 @@ class RemoteRepositoryAssetGraph(RemoteAssetGraph[RemoteRepositoryAssetNode]):
         # First pass, we need to:
 
         # * Build the dependency graph of asset keys.
-        upstream: Dict[AssetKey, Set[AssetKey]] = defaultdict(set)
-        downstream: Dict[AssetKey, Set[AssetKey]] = defaultdict(set)
+        upstream: dict[AssetKey, set[AssetKey]] = defaultdict(set)
+        downstream: dict[AssetKey, set[AssetKey]] = defaultdict(set)
 
         # * Build an index of execution sets by key. An execution set is a set of assets and checks
         # that must be executed together. AssetNodeSnaps and AssetCheckNodeSnaps already have an
         # optional execution_set_identifier set. A null execution_set_identifier indicates that the
         # node or check can be executed independently.
-        execution_sets_by_id: Dict[str, Set[EntityKey]] = defaultdict(set)
+        execution_sets_by_id: dict[str, set[EntityKey]] = defaultdict(set)
 
         # * Map checks to their corresponding asset keys
-        check_keys_by_asset_key: Dict[AssetKey, Set[AssetCheckKey]] = defaultdict(set)
+        check_keys_by_asset_key: dict[AssetKey, set[AssetCheckKey]] = defaultdict(set)
         for asset_snap in repo.get_asset_node_snaps():
             id = asset_snap.execution_set_identifier
             key = asset_snap.asset_key
@@ -514,8 +548,8 @@ class RemoteRepositoryAssetGraph(RemoteAssetGraph[RemoteRepositoryAssetNode]):
             check_keys_by_asset_key[check_snap.asset_key].add(check_snap.key)
 
         # Second Pass - build the final nodes
-        assets_by_key: Dict[AssetKey, RemoteRepositoryAssetNode] = {}
-        asset_checks_by_key: Dict[AssetCheckKey, RemoteAssetCheckNode] = {}
+        assets_by_key: dict[AssetKey, RemoteRepositoryAssetNode] = {}
+        asset_checks_by_key: dict[AssetCheckKey, RemoteAssetCheckNode] = {}
 
         for asset_snap in repo.get_asset_node_snaps():
             id = asset_snap.execution_set_identifier
@@ -546,10 +580,24 @@ class RemoteRepositoryAssetGraph(RemoteAssetGraph[RemoteRepositoryAssetNode]):
         )
 
 
-@record
 class RemoteWorkspaceAssetGraph(RemoteAssetGraph[RemoteWorkspaceAssetNode]):
-    remote_asset_nodes_by_key: Mapping[AssetKey, RemoteWorkspaceAssetNode]
-    remote_asset_check_nodes_by_key: Mapping[AssetCheckKey, RemoteAssetCheckNode]
+    def __init__(
+        self,
+        remote_asset_nodes_by_key: Mapping[AssetKey, RemoteWorkspaceAssetNode],
+        remote_asset_check_nodes_by_key: Mapping[AssetCheckKey, RemoteAssetCheckNode],
+    ):
+        self._remote_asset_nodes_by_key = remote_asset_nodes_by_key
+        self._remote_asset_check_nodes_by_key = remote_asset_check_nodes_by_key
+
+    @property
+    def remote_asset_nodes_by_key(self) -> Mapping[AssetKey, RemoteWorkspaceAssetNode]:
+        return self._remote_asset_nodes_by_key
+
+    @property
+    def remote_asset_check_nodes_by_key(
+        self,
+    ) -> Mapping[AssetCheckKey, RemoteAssetCheckNode]:
+        return self._remote_asset_check_nodes_by_key
 
     @property
     def _asset_nodes_by_key(self) -> Mapping[AssetKey, RemoteWorkspaceAssetNode]:
@@ -605,19 +653,19 @@ class RemoteWorkspaceAssetGraph(RemoteAssetGraph[RemoteWorkspaceAssetNode]):
             for repo in code_location.get_repositories().values()
         )
 
-        asset_infos_by_key: Dict[AssetKey, List[RepositoryScopedAssetInfo]] = defaultdict(list)
-        asset_checks_by_key: Dict[AssetCheckKey, RemoteAssetCheckNode] = {}
+        asset_infos_by_key: dict[AssetKey, list[RepositoryScopedAssetInfo]] = defaultdict(list)
+        asset_checks_by_key: dict[AssetCheckKey, RemoteAssetCheckNode] = {}
         for repo in repos:
             for key, asset_node in repo.asset_graph.remote_asset_nodes_by_key.items():
                 asset_infos_by_key[key].append(
                     RepositoryScopedAssetInfo(
                         asset_node=asset_node,
-                        targeting_sensor_names=[
+                        targeting_sensor_names=sorted(
                             s.name for s in repo.get_sensors_targeting(asset_node.key)
-                        ],
-                        targeting_schedule_names=[
+                        ),
+                        targeting_schedule_names=sorted(
                             s.name for s in repo.get_schedules_targeting(asset_node.key)
-                        ],
+                        ),
                     )
                 )
             # NOTE: matches previous behavior of completely ignoring asset check collisions
@@ -641,7 +689,9 @@ class RemoteWorkspaceAssetGraph(RemoteAssetGraph[RemoteWorkspaceAssetNode]):
         )
 
 
-def _warn_on_duplicate_nodes(nodes_with_multiple: Sequence[RemoteWorkspaceAssetNode]) -> None:
+def _warn_on_duplicate_nodes(
+    nodes_with_multiple: Sequence[RemoteWorkspaceAssetNode],
+) -> None:
     # Split the nodes into materializable, observable, and unexecutable nodes. Observable and
     # unexecutable `AssetNodeSnap` represent both source and external assets-- the
     # "External" in "AssetNodeSnap" is unrelated to the "external" in "external asset", this
@@ -650,7 +700,8 @@ def _warn_on_duplicate_nodes(nodes_with_multiple: Sequence[RemoteWorkspaceAssetN
     observable_duplicates: Mapping[AssetKey, Sequence[str]] = {}
     for node in nodes_with_multiple:
         check.invariant(
-            len(node.repo_scoped_asset_infos) > 1, "only perform check on nodes with multiple defs"
+            len(node.repo_scoped_asset_infos) > 1,
+            "only perform check on nodes with multiple defs",
         )
         observable_locations = []
         materializable_locations = []

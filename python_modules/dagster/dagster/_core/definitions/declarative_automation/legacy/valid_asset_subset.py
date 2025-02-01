@@ -1,7 +1,7 @@
 import datetime
 import operator
 from dataclasses import replace
-from typing import TYPE_CHECKING, AbstractSet, Any, Callable, Optional
+from typing import TYPE_CHECKING, AbstractSet, Any, Callable, Optional  # noqa: UP035
 
 import dagster._check as check
 from dagster._core.asset_graph_view.serializable_entity_subset import (
@@ -10,7 +10,7 @@ from dagster._core.asset_graph_view.serializable_entity_subset import (
 )
 from dagster._core.definitions.events import AssetKey, AssetKeyPartitionKey
 from dagster._core.definitions.partition import AllPartitionsSubset, PartitionsDefinition
-from dagster._core.definitions.time_window_partitions import BaseTimeWindowPartitionsSubset
+from dagster._core.definitions.time_window_partitions import TimeWindowPartitionsSubset
 from dagster._serdes.serdes import whitelist_for_serdes
 
 if TYPE_CHECKING:
@@ -74,7 +74,7 @@ class ValidAssetSubset(SerializableEntitySubset[AssetKey]):
             return ValidAssetSubset.empty(subset.key, partitions_def)
 
     def _is_compatible_with_subset(self, other: "SerializableEntitySubset") -> bool:
-        if isinstance(other.value, (BaseTimeWindowPartitionsSubset, AllPartitionsSubset)):
+        if isinstance(other.value, (TimeWindowPartitionsSubset, AllPartitionsSubset)):
             return self.is_compatible_with_partitions_def(other.value.partitions_def)
         else:
             return self.is_partitioned == other.is_partitioned

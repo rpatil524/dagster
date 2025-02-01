@@ -1,9 +1,8 @@
 import re
 import sys
 import time
-from typing import List
+from unittest import mock
 
-import mock
 import pytest
 from dagster import AssetIn, AssetKey, Definitions, asset
 from dagster._core.definitions.resolved_asset_deps import resolve_similar_asset_names
@@ -184,7 +183,7 @@ NUM_PERF_TRIALS = 10
 
 
 def test_perf() -> None:
-    assets: List[AssetKey] = []
+    assets: list[AssetKey] = []
     for i in range(NUM_ASSETS_TO_TEST_PERF):
 
         @asset(name="asset_" + str(i))

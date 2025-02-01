@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, TypeVar, Union
 
 from typing_extensions import TypeAlias
@@ -31,7 +32,7 @@ T_RepositoryLevelDefinition = TypeVar(
     SensorDefinition,
 )
 
-RepositoryListDefinition: TypeAlias = Union[
+RepositoryElementDefinition: TypeAlias = Union[
     "AssetsDefinition",
     GraphDefinition,
     JobDefinition,
@@ -42,7 +43,8 @@ RepositoryListDefinition: TypeAlias = Union[
     "UnresolvedPartitionedAssetScheduleDefinition",
 ]
 
-PendingRepositoryListDefinition: TypeAlias = Union[
-    RepositoryListDefinition,
-    "CacheableAssetsDefinition",
+RepositoryDictSpec: TypeAlias = dict[str, dict[str, RepositoryElementDefinition]]
+
+RepositoryListSpec: TypeAlias = Sequence[
+    Union[RepositoryElementDefinition, "CacheableAssetsDefinition"]
 ]

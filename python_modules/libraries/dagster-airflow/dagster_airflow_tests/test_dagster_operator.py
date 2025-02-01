@@ -11,8 +11,6 @@ from airflow import (
 from airflow.models import Connection, TaskInstance
 from dagster_airflow import DagsterCloudOperator
 
-from dagster_airflow_tests.marks import requires_local_db
-
 if airflow_version >= "2.0.0":
     from airflow.utils.state import DagRunState, TaskInstanceState
     from airflow.utils.types import DagRunType
@@ -35,7 +33,7 @@ else:
     )
 
 
-@requires_local_db
+@pytest.mark.requires_local_db
 class TestDagsterOperator(unittest.TestCase):
     @mock.patch("dagster_airflow.hooks.dagster_hook.DagsterHook.launch_run", return_value="run_id")
     @mock.patch("dagster_airflow.hooks.dagster_hook.DagsterHook.wait_for_run")
@@ -49,7 +47,7 @@ class TestDagsterOperator(unittest.TestCase):
             run_config=run_config,
             user_token="token",
             organization_id="test-org",
-            dagster_conn_id=None,
+            dagster_conn_id=None,  # pyright: ignore[reportArgumentType]
         )
         if airflow_version >= "2.0.0":
             dagrun = dag.create_dagrun(
@@ -60,9 +58,9 @@ class TestDagsterOperator(unittest.TestCase):
                 run_type=DagRunType.MANUAL,
             )
             ti = dagrun.get_task_instance(task_id="anytask")
-            ti.task = dag.get_task(task_id="anytask")
-            ti.run(ignore_ti_state=True)
-            assert ti.state == TaskInstanceState.SUCCESS
+            ti.task = dag.get_task(task_id="anytask")  # pyright: ignore[reportOptionalMemberAccess]
+            ti.run(ignore_ti_state=True)  # pyright: ignore[reportOptionalMemberAccess]
+            assert ti.state == TaskInstanceState.SUCCESS  # pyright: ignore[reportOptionalMemberAccess]
         else:
             ti = TaskInstance(task=task, execution_date=datetime.now())
             ctx = ti.get_template_context()
@@ -89,8 +87,8 @@ class TestDagsterOperator(unittest.TestCase):
             run_type=DagRunType.MANUAL,
         )
         ti = dagrun.get_task_instance(task_id="anytask")
-        ti.task = dag.get_task(task_id="anytask")
-        ti.run(ignore_ti_state=True)
-        assert ti.state == TaskInstanceState.SUCCESS
+        ti.task = dag.get_task(task_id="anytask")  # pyright: ignore[reportOptionalMemberAccess]
+        ti.run(ignore_ti_state=True)  # pyright: ignore[reportOptionalMemberAccess]
+        assert ti.state == TaskInstanceState.SUCCESS  # pyright: ignore[reportOptionalMemberAccess]
         launch_run.assert_called_once()
         wait_for_run.assert_called_once()

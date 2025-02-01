@@ -1,5 +1,5 @@
 import re
-from typing import Sequence
+from collections.abc import Sequence
 
 import pytest
 from dagster import (
@@ -27,6 +27,15 @@ def test_static_partitions(partition_keys: Sequence[str]):
     static_partitions = StaticPartitionsDefinition(partition_keys)
 
     assert static_partitions.get_partition_keys() == partition_keys
+
+
+def test_static_partition_string_input() -> None:
+    # maintain backcompat by allowing str for Sequence[str] here
+    # str is technically a Sequence[str] so type wise things should still be sound,
+    # though this behavior was certainly not intentional
+    static_partitions = StaticPartitionsDefinition("abcdef")
+
+    assert static_partitions.get_partition_keys() == "abcdef"
 
 
 def test_invalid_partition_key():
@@ -93,7 +102,7 @@ def test_unique_identifier():
         identifier1 = dynamic_def.get_serializable_unique_identifier(
             dynamic_partitions_store=instance
         )
-        instance.add_dynamic_partitions(dynamic_def.name, ["bar"])
+        instance.add_dynamic_partitions(dynamic_def.name, ["bar"])  # pyright: ignore[reportArgumentType]
         assert identifier1 != dynamic_def.get_serializable_unique_identifier(
             dynamic_partitions_store=instance
         )
@@ -103,7 +112,7 @@ def test_unique_identifier():
             {"a": StaticPartitionsDefinition(["a", "b", "c"]), "b": dynamic_dimension_def}
         )
         serializable_unique_id = multipartitions_def.get_serializable_unique_identifier(instance)
-        instance.add_dynamic_partitions(dynamic_dimension_def.name, ["apple"])
+        instance.add_dynamic_partitions(dynamic_dimension_def.name, ["apple"])  # pyright: ignore[reportArgumentType]
         assert serializable_unique_id != multipartitions_def.get_serializable_unique_identifier(
             instance
         )
@@ -163,7 +172,7 @@ def test_static_partitions_subset_identical_serialization():
     reverse_order_subset = partitions.subset_with_partition_keys(reversed(subset))
 
     assert in_order_subset.serialize() == reverse_order_subset.serialize()
-    assert serialize_value(in_order_subset) == serialize_value(reverse_order_subset)
+    assert serialize_value(in_order_subset) == serialize_value(reverse_order_subset)  # pyright: ignore[reportArgumentType]
 
 
 def test_static_partitions_invalid_chars():

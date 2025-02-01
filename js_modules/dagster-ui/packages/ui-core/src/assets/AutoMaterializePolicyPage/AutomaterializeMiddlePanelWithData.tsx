@@ -1,42 +1,30 @@
 import {
-  BaseTag,
   Box,
   Colors,
-  Icon,
-  MenuItem,
-  MiddleTruncate,
+  NonIdealState,
   Popover,
   Subheading,
   Subtitle2,
   Tag,
-  TagSelectorContainer,
-  TagSelectorDefaultTagTooltipStyle,
-  TagSelectorWithSearch,
 } from '@dagster-io/ui-components';
 import {useMemo} from 'react';
-import styled from 'styled-components';
 
 import {StatusDot} from './AutomaterializeLeftPanel';
 import {AutomaterializeRunsTable} from './AutomaterializeRunsTable';
 import {PartitionSubsetList} from './PartitionSubsetList';
+import {PartitionTagSelector} from './PartitionTagSelector';
 import {PolicyEvaluationTable} from './PolicyEvaluationTable';
-import {
-  FullPartitionsQuery,
-  FullPartitionsQueryVariables,
-} from './types/AutomaterializeMiddlePanelWithData.types';
+import {runTableFiltersForEvaluation} from './runTableFiltersForEvaluation';
 import {
   AssetConditionEvaluationRecordFragment,
   GetEvaluationsSpecificPartitionQuery,
 } from './types/GetEvaluationsQuery.types';
-import {gql, useQuery} from '../../apollo-client';
+import {usePartitionsForAssetKey} from './usePartitionsForAssetKey';
 import {useFeatureFlags} from '../../app/Flags';
 import {formatElapsedTimeWithMsec} from '../../app/Util';
 import {Timestamp} from '../../app/time/Timestamp';
-import {DimensionPartitionKeys, RunsFilter} from '../../graphql/types';
 import {RunsFeedTableWithFilters} from '../../runs/RunsFeedTable';
 import {AssetViewDefinitionNodeFragment} from '../types/AssetView.types';
-
-const emptyArray: any[] = [];
 
 interface Props {
   definition?: AssetViewDefinitionNodeFragment | null;
@@ -53,7 +41,7 @@ export const AutomaterializeMiddlePanelWithData = ({
   specificPartitionData,
   selectedPartition,
 }: Props) => {
-  const {flagRunsFeed} = useFeatureFlags();
+  const {flagLegacyRunsPage} = useFeatureFlags();
   const evaluation = selectedEvaluation?.evaluation;
   const rootEvaluationNode = useMemo(
     () => evaluation?.evaluationNodes.find((node) => node.uniqueId === evaluation.rootUniqueId),
@@ -121,45 +109,10 @@ export const AutomaterializeMiddlePanelWithData = ({
     );
   }, [definition, rootEvaluationNode, selectedEvaluation, rootUniqueId, selectPartition]);
 
-  const fullPartitionsQueryResult = useQuery<FullPartitionsQuery, FullPartitionsQueryVariables>(
-    FULL_PARTITIONS_QUERY,
-    {
-      variables: definition
-        ? {
-            assetKey: {path: definition.assetKey.path},
-          }
-        : undefined,
-      skip: !definition?.assetKey,
-    },
-  );
+  const {partitions: allPartitions} = usePartitionsForAssetKey(definition?.assetKey.path || []);
 
-  const {data} = fullPartitionsQueryResult;
-
-  let partitionKeys: DimensionPartitionKeys[] = emptyArray;
-  if (data?.assetNodeOrError.__typename === 'AssetNode') {
-    partitionKeys = data.assetNodeOrError.partitionKeysByDimension;
-  }
-
-  const allPartitions = useMemo(() => {
-    if (partitionKeys.length === 1) {
-      return partitionKeys[0]!.partitionKeys;
-    }
-
-    if (partitionKeys.length === 2) {
-      const firstSet = partitionKeys[0]!.partitionKeys;
-      const secondSet = partitionKeys[1]!.partitionKeys;
-      return firstSet.flatMap((key1) => secondSet.map((key2) => `${key1}|${key2}`));
-    }
-
-    if (partitionKeys.length > 2) {
-      throw new Error('Only 2 dimensions are supported');
-    }
-
-    return [];
-  }, [partitionKeys]);
-
-  const runsFilter: RunsFilter = useMemo(
-    () => ({runIds: selectedEvaluation ? selectedEvaluation.runIds : []}),
+  const runsFilter = useMemo(
+    () => runTableFiltersForEvaluation(selectedEvaluation?.runIds || []),
     [selectedEvaluation],
   );
 
@@ -203,70 +156,33 @@ export const AutomaterializeMiddlePanelWithData = ({
           <Box
             border="bottom"
             padding={{vertical: 12}}
-            margin={flagRunsFeed ? {top: 12} : {vertical: 12}}
+            margin={flagLegacyRunsPage ? {vertical: 12} : {top: 12}}
           >
             <Subtitle2>Runs launched ({selectedEvaluation.runIds.length})</Subtitle2>
           </Box>
-          {flagRunsFeed ? (
-            <RunsFeedTableWithFilters filter={runsFilter} />
-          ) : (
+          {flagLegacyRunsPage ? (
             <AutomaterializeRunsTable runIds={selectedEvaluation.runIds} />
+          ) : runsFilter ? (
+            <RunsFeedTableWithFilters filter={runsFilter} includeRunsFromBackfills={false} />
+          ) : (
+            <Box padding={{vertical: 12}}>
+              <NonIdealState
+                icon="run"
+                title="No runs launched"
+                description="No runs were launched by this evaluation."
+              />
+            </Box>
           )}
           <Box border="bottom" padding={{vertical: 12}}>
             <Subtitle2>Policy evaluation</Subtitle2>
           </Box>
           {definition?.partitionDefinition && selectedEvaluation.isLegacy ? (
             <Box padding={{vertical: 12}} flex={{justifyContent: 'flex-end'}}>
-              <TagSelectorWrapper>
-                <TagSelectorWithSearch
-                  closeOnSelect
-                  placeholder="Select a partition to view its result"
-                  allTags={allPartitions}
-                  selectedTags={selectedPartition ? [selectedPartition] : []}
-                  setSelectedTags={(tags) => {
-                    selectPartition(tags[tags.length - 1] || null);
-                  }}
-                  renderDropdownItem={(tag, props) => (
-                    <MenuItem text={tag} onClick={props.toggle} />
-                  )}
-                  renderDropdown={(dropdown) => (
-                    <Box padding={{top: 8, horizontal: 4}} style={{width: '370px'}}>
-                      {dropdown}
-                    </Box>
-                  )}
-                  renderTag={(tag, tagProps) => (
-                    <BaseTag
-                      key={tag}
-                      textColor={Colors.textLight()}
-                      fillColor={Colors.backgroundGray()}
-                      icon={<Icon name="partition" color={Colors.accentGray()} />}
-                      label={
-                        <div
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns: '1fr auto',
-                            gap: 4,
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            maxWidth: '120px',
-                          }}
-                          data-tooltip={tag}
-                          data-tooltip-style={TagSelectorDefaultTagTooltipStyle}
-                        >
-                          <MiddleTruncate text={tag} />
-                          <Box style={{cursor: 'pointer'}} onClick={tagProps.remove}>
-                            <Icon name="close" />
-                          </Box>
-                        </div>
-                      }
-                    />
-                  )}
-                  usePortal={false}
-                />
-                <SearchIconWrapper>
-                  <Icon name="search" />
-                </SearchIconWrapper>
-              </TagSelectorWrapper>
+              <PartitionTagSelector
+                allPartitions={allPartitions}
+                selectedPartition={selectedPartition}
+                selectPartition={selectPartition}
+              />
             </Box>
           ) : null}
           <PolicyEvaluationTable
@@ -288,38 +204,3 @@ export const AutomaterializeMiddlePanelWithData = ({
     </Box>
   );
 };
-
-const FULL_PARTITIONS_QUERY = gql`
-  query FullPartitionsQuery($assetKey: AssetKeyInput!) {
-    assetNodeOrError(assetKey: $assetKey) {
-      ... on AssetNode {
-        id
-        partitionKeysByDimension {
-          name
-          type
-          partitionKeys
-        }
-      }
-    }
-  }
-`;
-
-const TagSelectorWrapper = styled.div`
-  position: relative;
-
-  ${TagSelectorContainer} {
-    width: 370px;
-    padding-left: 32px;
-    height: 36px;
-  }
-`;
-
-const SearchIconWrapper = styled.div`
-  position: absolute;
-  left: 12px;
-  top: 0px;
-  bottom: 0px;
-  pointer-events: none;
-  display: flex;
-  align-items: center;
-`;

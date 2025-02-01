@@ -1,8 +1,9 @@
 import asyncio
 import sys
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Iterator, Mapping, Optional, Sequence
+from typing import Any, Optional
 
 import dagster._check as check
 import graphene
@@ -25,7 +26,7 @@ class GqlResult(Protocol):
     def errors(self) -> Optional[Sequence[str]]: ...
 
 
-Selector: TypeAlias = Dict[str, Any]
+Selector: TypeAlias = dict[str, Any]
 
 GqlVariables: TypeAlias = Mapping[str, Any]
 
@@ -165,7 +166,7 @@ def infer_repository(graphql_context: WorkspaceRequestContext) -> RemoteReposito
         assert len(repositories) == 1
         return next(iter(repositories.values()))
 
-    code_location = graphql_context.get_code_location("test")
+    code_location = graphql_context.get_code_location(main_repo_location_name())
     return code_location.get_repository("test_repo")
 
 
@@ -177,7 +178,7 @@ def infer_repository_selector(graphql_context: WorkspaceRequestContext) -> Selec
         assert len(repositories) == 1
         repository = next(iter(repositories.values()))
     else:
-        code_location = graphql_context.get_code_location("test")
+        code_location = graphql_context.get_code_location(main_repo_location_name())
         repository = code_location.get_repository("test_repo")
 
     return {

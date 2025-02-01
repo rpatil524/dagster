@@ -16,8 +16,6 @@ export type Scalars = {
   Boolean: {input: boolean; output: boolean};
   Int: {input: number; output: number};
   Float: {input: number; output: number};
-  BigInt: {input: any; output: any};
-  Cursor: {input: any; output: any};
   GenericScalar: {input: any; output: any};
   RunConfigData: {input: any; output: any};
 };
@@ -147,6 +145,7 @@ export type AssetCheck = {
   __typename: 'AssetCheck';
   additionalAssetKeys: Array<AssetKey>;
   assetKey: AssetKey;
+  automationCondition: Maybe<AutomationCondition>;
   blocking: Scalars['Boolean']['output'];
   canExecuteIndividually: AssetCheckCanExecuteIndividually;
   description: Maybe<Scalars['String']['output']>;
@@ -223,7 +222,7 @@ export type AssetCheckEvaluationPlannedEvent = MessageEvent &
 export type AssetCheckEvaluationTargetMaterializationData = {
   __typename: 'AssetCheckEvaluationTargetMaterializationData';
   runId: Scalars['String']['output'];
-  storageId: Scalars['Int']['output'];
+  storageId: Scalars['ID']['output'];
   timestamp: Scalars['Float']['output'];
 };
 
@@ -300,10 +299,11 @@ export type AssetConditionEvaluationNode =
 
 export type AssetConditionEvaluationRecord = {
   __typename: 'AssetConditionEvaluationRecord';
-  assetKey: AssetKey;
+  assetKey: Maybe<AssetKey>;
   endTimestamp: Maybe<Scalars['Float']['output']>;
+  entityKey: EntityKey;
   evaluation: AssetConditionEvaluation;
-  evaluationId: Scalars['Int']['output'];
+  evaluationId: Scalars['ID']['output'];
   evaluationNodes: Array<AutomationConditionEvaluationNode>;
   id: Scalars['ID']['output'];
   isLegacy: Scalars['Boolean']['output'];
@@ -427,7 +427,7 @@ export type AssetNode = {
   changedReasons: Array<ChangeReason>;
   computeKind: Maybe<Scalars['String']['output']>;
   configField: Maybe<ConfigTypeField>;
-  currentAutoMaterializeEvaluationId: Maybe<Scalars['Int']['output']>;
+  currentAutoMaterializeEvaluationId: Maybe<Scalars['ID']['output']>;
   dataVersion: Maybe<Scalars['String']['output']>;
   dataVersionByPartition: Array<Maybe<Scalars['String']['output']>>;
   dependedBy: Array<AssetDependency>;
@@ -482,6 +482,7 @@ export type AssetNode = {
   partitionKeys: Array<Scalars['String']['output']>;
   partitionKeysByDimension: Array<DimensionPartitionKeys>;
   partitionStats: Maybe<PartitionStats>;
+  pools: Array<Scalars['String']['output']>;
   repository: Repository;
   requiredResources: Array<ResourceRequirement>;
   staleCauses: Array<StaleCause>;
@@ -596,6 +597,7 @@ export type AssetPartitionsStatusCounts = {
 
 export type AssetSelection = {
   __typename: 'AssetSelection';
+  assetChecks: Array<AssetCheckhandle>;
   assetKeys: Array<AssetKey>;
   assetSelectionString: Maybe<Scalars['String']['output']>;
   assets: Array<Asset>;
@@ -624,7 +626,7 @@ export type AutoMaterializeAssetEvaluationNeedsMigrationError = Error & {
 export type AutoMaterializeAssetEvaluationRecord = {
   __typename: 'AutoMaterializeAssetEvaluationRecord';
   assetKey: AssetKey;
-  evaluationId: Scalars['Int']['output'];
+  evaluationId: Scalars['ID']['output'];
   id: Scalars['ID']['output'];
   numDiscarded: Scalars['Int']['output'];
   numRequested: Scalars['Int']['output'];
@@ -823,6 +825,7 @@ export type CompositeSolidDefinition = ISolidDefinition &
     name: Scalars['String']['output'];
     outputDefinitions: Array<OutputDefinition>;
     outputMappings: Array<OutputMapping>;
+    pools: Array<Scalars['String']['output']>;
     solidHandle: Maybe<SolidHandle>;
     solidHandles: Array<SolidHandle>;
     solids: Array<Solid>;
@@ -844,10 +847,12 @@ export type ConcurrencyKeyInfo = {
   assignedStepRunIds: Array<Scalars['String']['output']>;
   claimedSlots: Array<ClaimedConcurrencySlot>;
   concurrencyKey: Scalars['String']['output'];
+  limit: Maybe<Scalars['Int']['output']>;
   pendingStepCount: Scalars['Int']['output'];
   pendingStepRunIds: Array<Scalars['String']['output']>;
   pendingSteps: Array<PendingConcurrencyStep>;
   slotCount: Scalars['Int']['output'];
+  usingDefaultLimit: Maybe<Scalars['Boolean']['output']>;
 };
 
 export type ConfigType = {
@@ -1257,6 +1262,8 @@ export type EngineEvent = DisplayableEvent &
     stepKey: Maybe<Scalars['String']['output']>;
     timestamp: Scalars['String']['output'];
   };
+
+export type EntityKey = AssetCheckhandle | AssetKey;
 
 export type EnumConfigType = ConfigType & {
   __typename: 'EnumConfigType';
@@ -1836,6 +1843,7 @@ export type ISolidDefinition = {
   metadata: Array<MetadataItemDefinition>;
   name: Scalars['String']['output'];
   outputDefinitions: Array<OutputDefinition>;
+  pools: Array<Scalars['String']['output']>;
 };
 
 export type Input = {
@@ -1892,6 +1900,7 @@ export type Instance = {
   info: Maybe<Scalars['String']['output']>;
   maxConcurrencyLimitValue: Scalars['Int']['output'];
   minConcurrencyLimitValue: Scalars['Int']['output'];
+  poolConfig: Maybe<PoolConfig>;
   runLauncher: Maybe<RunLauncher>;
   runQueueConfig: Maybe<RunQueueConfig>;
   runQueuingSupported: Scalars['Boolean']['output'];
@@ -1949,7 +1958,7 @@ export type InstigationStateRunsArgs = {
 };
 
 export type InstigationStateTickArgs = {
-  tickId: Scalars['BigInt']['input'];
+  tickId: Scalars['ID']['input'];
 };
 
 export type InstigationStateTicksArgs = {
@@ -1987,7 +1996,7 @@ export enum InstigationStatus {
 
 export type InstigationTick = {
   __typename: 'InstigationTick';
-  autoMaterializeAssetEvaluationId: Maybe<Scalars['Int']['output']>;
+  autoMaterializeAssetEvaluationId: Maybe<Scalars['ID']['output']>;
   cursor: Maybe<Scalars['String']['output']>;
   dynamicPartitionsRequestResults: Array<DynamicPartitionsRequestResult>;
   endTimestamp: Maybe<Scalars['Float']['output']>;
@@ -2207,6 +2216,18 @@ export type LaunchBackfillSuccess = {
   launchedRunIds: Maybe<Array<Maybe<Scalars['String']['output']>>>;
 };
 
+export type LaunchMultipleRunsMutation = {
+  __typename: 'LaunchMultipleRunsMutation';
+  Output: LaunchMultipleRunsResultOrError;
+};
+
+export type LaunchMultipleRunsResult = {
+  __typename: 'LaunchMultipleRunsResult';
+  launchMultipleRunsResult: Array<LaunchRunResult>;
+};
+
+export type LaunchMultipleRunsResultOrError = LaunchMultipleRunsResult | PythonError;
+
 export type LaunchPipelineRunSuccess = {
   run: Run;
 };
@@ -2394,6 +2415,12 @@ export type LogMessageEvent = MessageEvent & {
   timestamp: Scalars['String']['output'];
 };
 
+export type LogRetrievalShellCommand = {
+  __typename: 'LogRetrievalShellCommand';
+  stderr: Maybe<Scalars['String']['output']>;
+  stdout: Maybe<Scalars['String']['output']>;
+};
+
 export type LogTelemetryMutationResult = LogTelemetrySuccess | PythonError;
 
 export type LogTelemetrySuccess = {
@@ -2420,6 +2447,7 @@ export type LogsCapturedEvent = MessageEvent & {
   message: Scalars['String']['output'];
   pid: Maybe<Scalars['Int']['output']>;
   runId: Scalars['String']['output'];
+  shellCmd: Maybe<LogRetrievalShellCommand>;
   solidHandleID: Maybe<Scalars['String']['output']>;
   stepKey: Maybe<Scalars['String']['output']>;
   stepKeys: Maybe<Array<Scalars['String']['output']>>;
@@ -2615,6 +2643,7 @@ export type Mutation = {
   deleteRun: DeletePipelineRunResult;
   freeConcurrencySlots: Scalars['Boolean']['output'];
   freeConcurrencySlotsForRun: Scalars['Boolean']['output'];
+  launchMultipleRuns: LaunchMultipleRunsResultOrError;
   launchPartitionBackfill: LaunchBackfillResult;
   launchPipelineExecution: LaunchRunResult;
   launchPipelineReexecution: LaunchRunReexecutionResult;
@@ -2680,6 +2709,10 @@ export type MutationFreeConcurrencySlotsArgs = {
 
 export type MutationFreeConcurrencySlotsForRunArgs = {
   runId: Scalars['String']['input'];
+};
+
+export type MutationLaunchMultipleRunsArgs = {
+  executionParamsList: Array<ExecutionParams>;
 };
 
 export type MutationLaunchPartitionBackfillArgs = {
@@ -3146,6 +3179,7 @@ export type PartitionDefinition = {
   __typename: 'PartitionDefinition';
   description: Scalars['String']['output'];
   dimensionTypes: Array<DimensionDefinitionType>;
+  fmt: Maybe<Scalars['String']['output']>;
   name: Maybe<Scalars['String']['output']>;
   type: PartitionDefinitionType;
 };
@@ -3691,6 +3725,13 @@ export type PipelineTagAndValues = {
   values: Array<Scalars['String']['output']>;
 };
 
+export type PoolConfig = {
+  __typename: 'PoolConfig';
+  defaultPoolLimit: Maybe<Scalars['Int']['output']>;
+  opGranularityRunBuffer: Maybe<Scalars['Int']['output']>;
+  poolGranularity: Maybe<Scalars['String']['output']>;
+};
+
 export type PresetNotFoundError = Error & {
   __typename: 'PresetNotFoundError';
   message: Scalars['String']['output'];
@@ -3717,7 +3758,7 @@ export type PythonError = Error & {
 
 export type Query = {
   __typename: 'Query';
-  allTopLevelResourceDetailsOrError: ResourcesOrError;
+  allTopLevelResourceDetailsOrError: ResourceDetailsListOrError;
   assetBackfillPreview: Array<AssetPartitions>;
   assetCheckExecutions: Array<AssetCheckExecution>;
   assetConditionEvaluationForPartition: Maybe<AssetConditionEvaluation>;
@@ -3755,6 +3796,7 @@ export type Query = {
   pipelineSnapshotOrError: PipelineSnapshotOrError;
   repositoriesOrError: RepositoriesOrError;
   repositoryOrError: RepositoryOrError;
+  resourcesOrError: ResourcesOrError;
   runConfigSchemaOrError: RunConfigSchemaOrError;
   runGroupOrError: RunGroupOrError;
   runIdsOrError: RunIdsOrError;
@@ -3795,19 +3837,20 @@ export type QueryAssetCheckExecutionsArgs = {
 };
 
 export type QueryAssetConditionEvaluationForPartitionArgs = {
-  assetKey: AssetKeyInput;
-  evaluationId: Scalars['Int']['input'];
+  assetKey?: InputMaybe<AssetKeyInput>;
+  evaluationId: Scalars['ID']['input'];
   partition: Scalars['String']['input'];
 };
 
 export type QueryAssetConditionEvaluationRecordsOrErrorArgs = {
-  assetKey: AssetKeyInput;
+  assetCheckKey?: InputMaybe<AssetCheckHandleInput>;
+  assetKey?: InputMaybe<AssetKeyInput>;
   cursor?: InputMaybe<Scalars['String']['input']>;
   limit: Scalars['Int']['input'];
 };
 
 export type QueryAssetConditionEvaluationsForEvaluationIdArgs = {
-  evaluationId: Scalars['Int']['input'];
+  evaluationId: Scalars['ID']['input'];
 };
 
 export type QueryAssetNodeAdditionalRequiredKeysArgs = {
@@ -3850,7 +3893,7 @@ export type QueryAutoMaterializeAssetEvaluationsOrErrorArgs = {
 };
 
 export type QueryAutoMaterializeEvaluationsForEvaluationIdArgs = {
-  evaluationId: Scalars['Int']['input'];
+  evaluationId: Scalars['ID']['input'];
 };
 
 export type QueryAutoMaterializeTicksArgs = {
@@ -3952,6 +3995,10 @@ export type QueryRepositoryOrErrorArgs = {
   repositorySelector: RepositorySelector;
 };
 
+export type QueryResourcesOrErrorArgs = {
+  pipelineSelector: PipelineSelector;
+};
+
 export type QueryRunConfigSchemaOrErrorArgs = {
   mode?: InputMaybe<Scalars['String']['input']>;
   selector: PipelineSelector;
@@ -3979,14 +4026,14 @@ export type QueryRunTagsOrErrorArgs = {
 
 export type QueryRunsFeedCountOrErrorArgs = {
   filter?: InputMaybe<RunsFilter>;
-  includeRunsFromBackfills?: InputMaybe<Scalars['Boolean']['input']>;
+  view: RunsFeedView;
 };
 
 export type QueryRunsFeedOrErrorArgs = {
   cursor?: InputMaybe<Scalars['String']['input']>;
   filter?: InputMaybe<RunsFilter>;
-  includeRunsFromBackfills?: InputMaybe<Scalars['Boolean']['input']>;
   limit: Scalars['Int']['input'];
+  view: RunsFeedView;
 };
 
 export type QueryRunsOrErrorArgs = {
@@ -4018,8 +4065,8 @@ export type QueryTopLevelResourceDetailsOrErrorArgs = {
 };
 
 export type QueryTruePartitionsForAutomationConditionEvaluationNodeArgs = {
-  assetKey: AssetKeyInput;
-  evaluationId: Scalars['Int']['input'];
+  assetKey?: InputMaybe<AssetKeyInput>;
+  evaluationId: Scalars['ID']['input'];
   nodeUniqueId?: InputMaybe<Scalars['String']['input']>;
 };
 
@@ -4260,6 +4307,11 @@ export type Resource = {
   name: Scalars['String']['output'];
 };
 
+export type ResourceConnection = {
+  __typename: 'ResourceConnection';
+  resources: Array<Resource>;
+};
+
 export type ResourceDetails = {
   __typename: 'ResourceDetails';
   assetKeysUsing: Array<AssetKey>;
@@ -4281,6 +4333,11 @@ export type ResourceDetailsList = {
   __typename: 'ResourceDetailsList';
   results: Array<ResourceDetails>;
 };
+
+export type ResourceDetailsListOrError =
+  | PythonError
+  | RepositoryNotFoundError
+  | ResourceDetailsList;
 
 export type ResourceDetailsOrError = PythonError | ResourceDetails | ResourceNotFoundError;
 
@@ -4420,7 +4477,11 @@ export type ResourceSelector = {
   resourceName: Scalars['String']['input'];
 };
 
-export type ResourcesOrError = PythonError | RepositoryNotFoundError | ResourceDetailsList;
+export type ResourcesOrError =
+  | InvalidSubsetError
+  | PipelineNotFoundError
+  | PythonError
+  | ResourceConnection;
 
 export type ResumeBackfillResult = PythonError | ResumeBackfillSuccess | UnauthorizedError;
 
@@ -4432,6 +4493,7 @@ export type ResumeBackfillSuccess = {
 export type Run = PipelineRun &
   RunsFeedEntry & {
     __typename: 'Run';
+    allPools: Maybe<Array<Scalars['String']['output']>>;
     assetCheckSelection: Maybe<Array<AssetCheckhandle>>;
     assetChecks: Maybe<Array<AssetCheckhandle>>;
     assetMaterializations: Array<MaterializationEvent>;
@@ -4800,6 +4862,12 @@ export type RunsFeedEntry = {
   tags: Array<PipelineTag>;
 };
 
+export enum RunsFeedView {
+  BACKFILLS = 'BACKFILLS',
+  ROOTS = 'ROOTS',
+  RUNS = 'RUNS',
+}
+
 export type RunsFilter = {
   createdAfter?: InputMaybe<Scalars['Float']['input']>;
   createdBefore?: InputMaybe<Scalars['Float']['input']>;
@@ -4925,7 +4993,11 @@ export type ScheduleData = {
 
 export type ScheduleDryRunResult = DryRunInstigationTick | PythonError | ScheduleNotFoundError;
 
-export type ScheduleMutationResult = PythonError | ScheduleStateResult | UnauthorizedError;
+export type ScheduleMutationResult =
+  | PythonError
+  | ScheduleNotFoundError
+  | ScheduleStateResult
+  | UnauthorizedError;
 
 export type ScheduleNotFoundError = Error & {
   __typename: 'ScheduleNotFoundError';
@@ -5142,6 +5214,8 @@ export type SolidDefinition = ISolidDefinition & {
   metadata: Array<MetadataItemDefinition>;
   name: Scalars['String']['output'];
   outputDefinitions: Array<OutputDefinition>;
+  pool: Maybe<Scalars['String']['output']>;
+  pools: Array<Scalars['String']['output']>;
   requiredResources: Array<ResourceRequirement>;
 };
 
@@ -5961,6 +6035,12 @@ export const buildAssetCheck = (
         : relationshipsToOmit.has('AssetKey')
           ? ({} as AssetKey)
           : buildAssetKey({}, relationshipsToOmit),
+    automationCondition:
+      overrides && overrides.hasOwnProperty('automationCondition')
+        ? overrides.automationCondition!
+        : relationshipsToOmit.has('AutomationCondition')
+          ? ({} as AutomationCondition)
+          : buildAutomationCondition({}, relationshipsToOmit),
     blocking: overrides && overrides.hasOwnProperty('blocking') ? overrides.blocking! : true,
     canExecuteIndividually:
       overrides && overrides.hasOwnProperty('canExecuteIndividually')
@@ -6082,7 +6162,10 @@ export const buildAssetCheckEvaluationTargetMaterializationData = (
   return {
     __typename: 'AssetCheckEvaluationTargetMaterializationData',
     runId: overrides && overrides.hasOwnProperty('runId') ? overrides.runId! : 'exercitationem',
-    storageId: overrides && overrides.hasOwnProperty('storageId') ? overrides.storageId! : 3254,
+    storageId:
+      overrides && overrides.hasOwnProperty('storageId')
+        ? overrides.storageId!
+        : '48345232-8586-483c-9958-ca65cb4208cd',
     timestamp: overrides && overrides.hasOwnProperty('timestamp') ? overrides.timestamp! : 3.87,
   };
 };
@@ -6226,6 +6309,12 @@ export const buildAssetConditionEvaluationRecord = (
           : buildAssetKey({}, relationshipsToOmit),
     endTimestamp:
       overrides && overrides.hasOwnProperty('endTimestamp') ? overrides.endTimestamp! : 4.33,
+    entityKey:
+      overrides && overrides.hasOwnProperty('entityKey')
+        ? overrides.entityKey!
+        : relationshipsToOmit.has('AssetCheckhandle')
+          ? ({} as AssetCheckhandle)
+          : buildAssetCheckhandle({}, relationshipsToOmit),
     evaluation:
       overrides && overrides.hasOwnProperty('evaluation')
         ? overrides.evaluation!
@@ -6233,7 +6322,9 @@ export const buildAssetConditionEvaluationRecord = (
           ? ({} as AssetConditionEvaluation)
           : buildAssetConditionEvaluation({}, relationshipsToOmit),
     evaluationId:
-      overrides && overrides.hasOwnProperty('evaluationId') ? overrides.evaluationId! : 5501,
+      overrides && overrides.hasOwnProperty('evaluationId')
+        ? overrides.evaluationId!
+        : '9239f05d-b105-4691-86f3-1d5a918e58b2',
     evaluationNodes:
       overrides && overrides.hasOwnProperty('evaluationNodes') ? overrides.evaluationNodes! : [],
     id:
@@ -6560,7 +6651,7 @@ export const buildAssetNode = (
     currentAutoMaterializeEvaluationId:
       overrides && overrides.hasOwnProperty('currentAutoMaterializeEvaluationId')
         ? overrides.currentAutoMaterializeEvaluationId!
-        : 6693,
+        : 'bcbeb9b8-1fb4-4466-a03e-1185d19566d1',
     dataVersion:
       overrides && overrides.hasOwnProperty('dataVersion') ? overrides.dataVersion! : 'a',
     dataVersionByPartition:
@@ -6659,6 +6750,7 @@ export const buildAssetNode = (
         : relationshipsToOmit.has('PartitionStats')
           ? ({} as PartitionStats)
           : buildPartitionStats({}, relationshipsToOmit),
+    pools: overrides && overrides.hasOwnProperty('pools') ? overrides.pools! : [],
     repository:
       overrides && overrides.hasOwnProperty('repository')
         ? overrides.repository!
@@ -6820,6 +6912,7 @@ export const buildAssetSelection = (
   relationshipsToOmit.add('AssetSelection');
   return {
     __typename: 'AssetSelection',
+    assetChecks: overrides && overrides.hasOwnProperty('assetChecks') ? overrides.assetChecks! : [],
     assetKeys: overrides && overrides.hasOwnProperty('assetKeys') ? overrides.assetKeys! : [],
     assetSelectionString:
       overrides && overrides.hasOwnProperty('assetSelectionString')
@@ -6879,7 +6972,9 @@ export const buildAutoMaterializeAssetEvaluationRecord = (
           ? ({} as AssetKey)
           : buildAssetKey({}, relationshipsToOmit),
     evaluationId:
-      overrides && overrides.hasOwnProperty('evaluationId') ? overrides.evaluationId! : 9286,
+      overrides && overrides.hasOwnProperty('evaluationId')
+        ? overrides.evaluationId!
+        : 'f9a60fcd-3c3e-48fc-b5b9-05e77c55711f',
     id:
       overrides && overrides.hasOwnProperty('id')
         ? overrides.id!
@@ -7236,6 +7331,7 @@ export const buildCompositeSolidDefinition = (
         : [],
     outputMappings:
       overrides && overrides.hasOwnProperty('outputMappings') ? overrides.outputMappings! : [],
+    pools: overrides && overrides.hasOwnProperty('pools') ? overrides.pools! : [],
     solidHandle:
       overrides && overrides.hasOwnProperty('solidHandle')
         ? overrides.solidHandle!
@@ -7272,6 +7368,7 @@ export const buildConcurrencyKeyInfo = (
       overrides && overrides.hasOwnProperty('claimedSlots') ? overrides.claimedSlots! : [],
     concurrencyKey:
       overrides && overrides.hasOwnProperty('concurrencyKey') ? overrides.concurrencyKey! : 'quasi',
+    limit: overrides && overrides.hasOwnProperty('limit') ? overrides.limit! : 703,
     pendingStepCount:
       overrides && overrides.hasOwnProperty('pendingStepCount') ? overrides.pendingStepCount! : 370,
     pendingStepRunIds:
@@ -7281,6 +7378,10 @@ export const buildConcurrencyKeyInfo = (
     pendingSteps:
       overrides && overrides.hasOwnProperty('pendingSteps') ? overrides.pendingSteps! : [],
     slotCount: overrides && overrides.hasOwnProperty('slotCount') ? overrides.slotCount! : 455,
+    usingDefaultLimit:
+      overrides && overrides.hasOwnProperty('usingDefaultLimit')
+        ? overrides.usingDefaultLimit!
+        : true,
   };
 };
 
@@ -8756,6 +8857,7 @@ export const buildISolidDefinition = (
       overrides && overrides.hasOwnProperty('outputDefinitions')
         ? overrides.outputDefinitions!
         : [],
+    pools: overrides && overrides.hasOwnProperty('pools') ? overrides.pools! : [],
   };
 };
 
@@ -8879,6 +8981,12 @@ export const buildInstance = (
       overrides && overrides.hasOwnProperty('minConcurrencyLimitValue')
         ? overrides.minConcurrencyLimitValue!
         : 4538,
+    poolConfig:
+      overrides && overrides.hasOwnProperty('poolConfig')
+        ? overrides.poolConfig!
+        : relationshipsToOmit.has('PoolConfig')
+          ? ({} as PoolConfig)
+          : buildPoolConfig({}, relationshipsToOmit),
     runLauncher:
       overrides && overrides.hasOwnProperty('runLauncher')
         ? overrides.runLauncher!
@@ -9058,7 +9166,7 @@ export const buildInstigationTick = (
     autoMaterializeAssetEvaluationId:
       overrides && overrides.hasOwnProperty('autoMaterializeAssetEvaluationId')
         ? overrides.autoMaterializeAssetEvaluationId!
-        : 5375,
+        : '95e99e1c-3377-4875-abc8-9f50fc5b7778',
     cursor: overrides && overrides.hasOwnProperty('cursor') ? overrides.cursor! : 'voluptatem',
     dynamicPartitionsRequestResults:
       overrides && overrides.hasOwnProperty('dynamicPartitionsRequestResults')
@@ -9414,6 +9522,38 @@ export const buildLaunchBackfillSuccess = (
   };
 };
 
+export const buildLaunchMultipleRunsMutation = (
+  overrides?: Partial<LaunchMultipleRunsMutation>,
+  _relationshipsToOmit: Set<string> = new Set(),
+): {__typename: 'LaunchMultipleRunsMutation'} & LaunchMultipleRunsMutation => {
+  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
+  relationshipsToOmit.add('LaunchMultipleRunsMutation');
+  return {
+    __typename: 'LaunchMultipleRunsMutation',
+    Output:
+      overrides && overrides.hasOwnProperty('Output')
+        ? overrides.Output!
+        : relationshipsToOmit.has('LaunchMultipleRunsResult')
+          ? ({} as LaunchMultipleRunsResult)
+          : buildLaunchMultipleRunsResult({}, relationshipsToOmit),
+  };
+};
+
+export const buildLaunchMultipleRunsResult = (
+  overrides?: Partial<LaunchMultipleRunsResult>,
+  _relationshipsToOmit: Set<string> = new Set(),
+): {__typename: 'LaunchMultipleRunsResult'} & LaunchMultipleRunsResult => {
+  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
+  relationshipsToOmit.add('LaunchMultipleRunsResult');
+  return {
+    __typename: 'LaunchMultipleRunsResult',
+    launchMultipleRunsResult:
+      overrides && overrides.hasOwnProperty('launchMultipleRunsResult')
+        ? overrides.launchMultipleRunsResult!
+        : [],
+  };
+};
+
 export const buildLaunchPipelineRunSuccess = (
   overrides?: Partial<LaunchPipelineRunSuccess>,
   _relationshipsToOmit: Set<string> = new Set(),
@@ -9680,6 +9820,19 @@ export const buildLogMessageEvent = (
   };
 };
 
+export const buildLogRetrievalShellCommand = (
+  overrides?: Partial<LogRetrievalShellCommand>,
+  _relationshipsToOmit: Set<string> = new Set(),
+): {__typename: 'LogRetrievalShellCommand'} & LogRetrievalShellCommand => {
+  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
+  relationshipsToOmit.add('LogRetrievalShellCommand');
+  return {
+    __typename: 'LogRetrievalShellCommand',
+    stderr: overrides && overrides.hasOwnProperty('stderr') ? overrides.stderr! : 'adipisci',
+    stdout: overrides && overrides.hasOwnProperty('stdout') ? overrides.stdout! : 'voluptas',
+  };
+};
+
 export const buildLogTelemetrySuccess = (
   overrides?: Partial<LogTelemetrySuccess>,
   _relationshipsToOmit: Set<string> = new Set(),
@@ -9740,6 +9893,12 @@ export const buildLogsCapturedEvent = (
     message: overrides && overrides.hasOwnProperty('message') ? overrides.message! : 'ex',
     pid: overrides && overrides.hasOwnProperty('pid') ? overrides.pid! : 7623,
     runId: overrides && overrides.hasOwnProperty('runId') ? overrides.runId! : 'modi',
+    shellCmd:
+      overrides && overrides.hasOwnProperty('shellCmd')
+        ? overrides.shellCmd!
+        : relationshipsToOmit.has('LogRetrievalShellCommand')
+          ? ({} as LogRetrievalShellCommand)
+          : buildLogRetrievalShellCommand({}, relationshipsToOmit),
     solidHandleID:
       overrides && overrides.hasOwnProperty('solidHandleID')
         ? overrides.solidHandleID!
@@ -10195,6 +10354,12 @@ export const buildMutation = (
       overrides && overrides.hasOwnProperty('freeConcurrencySlotsForRun')
         ? overrides.freeConcurrencySlotsForRun!
         : false,
+    launchMultipleRuns:
+      overrides && overrides.hasOwnProperty('launchMultipleRuns')
+        ? overrides.launchMultipleRuns!
+        : relationshipsToOmit.has('LaunchMultipleRunsResult')
+          ? ({} as LaunchMultipleRunsResult)
+          : buildLaunchMultipleRunsResult({}, relationshipsToOmit),
     launchPartitionBackfill:
       overrides && overrides.hasOwnProperty('launchPartitionBackfill')
         ? overrides.launchPartitionBackfill!
@@ -10943,6 +11108,7 @@ export const buildPartitionDefinition = (
       overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'ab',
     dimensionTypes:
       overrides && overrides.hasOwnProperty('dimensionTypes') ? overrides.dimensionTypes! : [],
+    fmt: overrides && overrides.hasOwnProperty('fmt') ? overrides.fmt! : 'earum',
     name: overrides && overrides.hasOwnProperty('name') ? overrides.name! : 'facilis',
     type:
       overrides && overrides.hasOwnProperty('type')
@@ -11933,6 +12099,29 @@ export const buildPipelineTagAndValues = (
   };
 };
 
+export const buildPoolConfig = (
+  overrides?: Partial<PoolConfig>,
+  _relationshipsToOmit: Set<string> = new Set(),
+): {__typename: 'PoolConfig'} & PoolConfig => {
+  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
+  relationshipsToOmit.add('PoolConfig');
+  return {
+    __typename: 'PoolConfig',
+    defaultPoolLimit:
+      overrides && overrides.hasOwnProperty('defaultPoolLimit')
+        ? overrides.defaultPoolLimit!
+        : 2648,
+    opGranularityRunBuffer:
+      overrides && overrides.hasOwnProperty('opGranularityRunBuffer')
+        ? overrides.opGranularityRunBuffer!
+        : 3091,
+    poolGranularity:
+      overrides && overrides.hasOwnProperty('poolGranularity')
+        ? overrides.poolGranularity!
+        : 'enim',
+  };
+};
+
 export const buildPresetNotFoundError = (
   overrides?: Partial<PresetNotFoundError>,
   _relationshipsToOmit: Set<string> = new Set(),
@@ -12194,6 +12383,12 @@ export const buildQuery = (
         : relationshipsToOmit.has('PythonError')
           ? ({} as PythonError)
           : buildPythonError({}, relationshipsToOmit),
+    resourcesOrError:
+      overrides && overrides.hasOwnProperty('resourcesOrError')
+        ? overrides.resourcesOrError!
+        : relationshipsToOmit.has('InvalidSubsetError')
+          ? ({} as InvalidSubsetError)
+          : buildInvalidSubsetError({}, relationshipsToOmit),
     runConfigSchemaOrError:
       overrides && overrides.hasOwnProperty('runConfigSchemaOrError')
         ? overrides.runConfigSchemaOrError!
@@ -12765,6 +12960,18 @@ export const buildResource = (
   };
 };
 
+export const buildResourceConnection = (
+  overrides?: Partial<ResourceConnection>,
+  _relationshipsToOmit: Set<string> = new Set(),
+): {__typename: 'ResourceConnection'} & ResourceConnection => {
+  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
+  relationshipsToOmit.add('ResourceConnection');
+  return {
+    __typename: 'ResourceConnection',
+    resources: overrides && overrides.hasOwnProperty('resources') ? overrides.resources! : [],
+  };
+};
+
 export const buildResourceDetails = (
   overrides?: Partial<ResourceDetails>,
   _relationshipsToOmit: Set<string> = new Set(),
@@ -12978,6 +13185,7 @@ export const buildRun = (
   relationshipsToOmit.add('Run');
   return {
     __typename: 'Run',
+    allPools: overrides && overrides.hasOwnProperty('allPools') ? overrides.allPools! : [],
     assetCheckSelection:
       overrides && overrides.hasOwnProperty('assetCheckSelection')
         ? overrides.assetCheckSelection!
@@ -14333,6 +14541,8 @@ export const buildSolidDefinition = (
       overrides && overrides.hasOwnProperty('outputDefinitions')
         ? overrides.outputDefinitions!
         : [],
+    pool: overrides && overrides.hasOwnProperty('pool') ? overrides.pool! : 'voluptates',
+    pools: overrides && overrides.hasOwnProperty('pools') ? overrides.pools! : [],
     requiredResources:
       overrides && overrides.hasOwnProperty('requiredResources')
         ? overrides.requiredResources!

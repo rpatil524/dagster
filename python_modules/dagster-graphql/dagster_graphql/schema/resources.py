@@ -1,5 +1,3 @@
-from typing import List
-
 import dagster._check as check
 import graphene
 from dagster._core.definitions.selector import ResourceSelector
@@ -11,8 +9,8 @@ from dagster._core.remote_representation.external_data import (
     ResourceValueSnap,
 )
 
-from dagster_graphql.schema.asset_key import GrapheneAssetKey
 from dagster_graphql.schema.config_types import GrapheneConfigTypeField
+from dagster_graphql.schema.entity_key import GrapheneAssetKey
 from dagster_graphql.schema.errors import (
     GraphenePythonError,
     GrapheneRepositoryNotFoundError,
@@ -83,7 +81,7 @@ class GrapheneJobAndSpecificOps(graphene.ObjectType):
     def resolve_jobName(self, _) -> str:
         return self._entry.job_name
 
-    def resolve_opHandleIDs(self, _) -> List[str]:
+    def resolve_opHandleIDs(self, _) -> list[str]:
         return [str(handle) for handle in self._entry.node_handles]
 
 
@@ -120,7 +118,12 @@ class GrapheneResourceDetails(graphene.ObjectType):
     class Meta:
         name = "ResourceDetails"
 
-    def __init__(self, location_name: str, repository_name: str, remote_resource: RemoteResource):
+    def __init__(
+        self,
+        location_name: str,
+        repository_name: str,
+        remote_resource: RemoteResource,
+    ):
         super().__init__()
 
         self.id = f"{location_name}-{repository_name}-{remote_resource.name}"
@@ -144,10 +147,10 @@ class GrapheneResourceDetails(graphene.ObjectType):
         self._schedules_using = remote_resource.schedules_using
         self._sensors_using = remote_resource.sensors_using
 
-    def resolve_configFields(self, _graphene_info):
+    def resolve_configFields(self, _graphene_info: ResolveInfo):
         return [
             GrapheneConfigTypeField(
-                config_schema_snapshot=self._config_schema_snap,
+                get_config_type=self._config_schema_snap.get_config_snap,
                 field_snap=field_snap,
             )
             for field_snap in self._config_field_snaps
@@ -159,7 +162,7 @@ class GrapheneResourceDetails(graphene.ObjectType):
             for key, value in self._configured_values.items()
         ]
 
-    def resolve_nestedResources(self, graphene_info) -> List[GrapheneNestedResourceEntry]:
+    def resolve_nestedResources(self, graphene_info) -> list[GrapheneNestedResourceEntry]:
         from dagster_graphql.implementation.fetch_resources import get_resource_or_error
 
         return [
@@ -182,7 +185,7 @@ class GrapheneResourceDetails(graphene.ObjectType):
             for k, v in self._nested_resources.items()
         ]
 
-    def resolve_parentResources(self, graphene_info) -> List[GrapheneNestedResourceEntry]:
+    def resolve_parentResources(self, graphene_info) -> list[GrapheneNestedResourceEntry]:
         from dagster_graphql.implementation.fetch_resources import get_resource_or_error
 
         return [
@@ -201,10 +204,10 @@ class GrapheneResourceDetails(graphene.ObjectType):
             for name, attribute in self._parent_resources.items()
         ]
 
-    def resolve_assetKeysUsing(self, _graphene_info) -> List[GrapheneAssetKey]:
+    def resolve_assetKeysUsing(self, _graphene_info) -> list[GrapheneAssetKey]:
         return [GrapheneAssetKey(path=asset_key.path) for asset_key in self._asset_keys_using]
 
-    def resolve_jobsOpsUsing(self, graphene_info: ResolveInfo) -> List[GrapheneJobAndSpecificOps]:
+    def resolve_jobsOpsUsing(self, graphene_info: ResolveInfo) -> list[GrapheneJobAndSpecificOps]:
         return [
             GrapheneJobAndSpecificOps(
                 entry=entry,
@@ -214,10 +217,10 @@ class GrapheneResourceDetails(graphene.ObjectType):
             for entry in self._job_ops_using
         ]
 
-    def resolve_schedulesUsing(self, _graphene_info) -> List[str]:
+    def resolve_schedulesUsing(self, _graphene_info) -> list[str]:
         return self._schedules_using
 
-    def resolve_sensorsUsing(self, _graphene_info) -> List[str]:
+    def resolve_sensorsUsing(self, _graphene_info) -> list[str]:
         return self._sensors_using
 
 
@@ -237,4 +240,4 @@ class GrapheneResourceDetailsList(graphene.ObjectType):
 class GrapheneResourceDetailsListOrError(graphene.Union):
     class Meta:
         types = (GrapheneResourceDetailsList, GrapheneRepositoryNotFoundError, GraphenePythonError)
-        name = "ResourcesOrError"
+        name = "ResourceDetailsListOrError"

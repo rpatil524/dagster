@@ -1,5 +1,6 @@
 import logging
-from typing import Any, Mapping, NamedTuple, Optional, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any, NamedTuple, Optional
 
 from typing_extensions import Self
 
@@ -41,7 +42,7 @@ class RunQueueConfig(
         should_block_op_concurrency_limited_runs: bool = False,
         op_concurrency_slot_buffer: int = 0,
     ):
-        return super(RunQueueConfig, cls).__new__(
+        return super().__new__(
             cls,
             check.int_param(max_concurrent_runs, "max_concurrent_runs"),
             check.opt_sequence_param(tag_concurrency_limits, "tag_concurrency_limits"),
@@ -51,6 +52,25 @@ class RunQueueConfig(
                 should_block_op_concurrency_limited_runs, "should_block_op_concurrency_limited_runs"
             ),
             check.int_param(op_concurrency_slot_buffer, "op_concurrency_slot_buffer"),
+        )
+
+    def with_concurrency_settings(
+        self, concurrency_settings: Mapping[str, Any]
+    ) -> "RunQueueConfig":
+        run_settings = concurrency_settings.get("runs", {})
+        pool_settings = concurrency_settings.get("pools", {})
+        return RunQueueConfig(
+            max_concurrent_runs=run_settings.get("max_concurrent_runs", self.max_concurrent_runs),
+            tag_concurrency_limits=run_settings.get(
+                "tag_concurrency_limits", self.tag_concurrency_limits
+            ),
+            max_user_code_failure_retries=self.max_user_code_failure_retries,
+            user_code_failure_retry_delay=self.user_code_failure_retry_delay,
+            should_block_op_concurrency_limited_runs=bool(pool_settings)
+            or self.should_block_op_concurrency_limited_runs,
+            op_concurrency_slot_buffer=pool_settings.get(
+                "op_granularity_run_buffer", self.op_concurrency_slot_buffer
+            ),
         )
 
 
@@ -115,7 +135,6 @@ class QueuedRunCoordinator(RunCoordinator[T_DagsterInstance], ConfigurableClass)
                 "op_concurrency_slot_buffer can only be set if block_op_concurrency_limited_runs "
                 "is enabled",
             )
-
         self._logger = logging.getLogger("dagster.run_coordinator.queued_run_coordinator")
         super().__init__()
 
@@ -288,6 +307,7 @@ class QueuedRunCoordinator(RunCoordinator[T_DagsterInstance], ConfigurableClass)
         run = self._instance.get_run_by_id(dagster_run.run_id)
         if run is None:
             check.failed(f"Failed to reload run {dagster_run.run_id}")
+        assert run
         return run
 
     def cancel_run(self, run_id: str) -> bool:

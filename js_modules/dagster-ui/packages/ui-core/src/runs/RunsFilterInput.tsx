@@ -12,6 +12,7 @@ import {UserDisplay} from 'shared/runs/UserDisplay.oss';
 
 import {DagsterTag} from './RunTag';
 import {gql, useApolloClient, useLazyQuery} from '../apollo-client';
+import {RUNS_FEED_CURSOR_KEY} from './RunsFeedUtils';
 import {
   RunTagKeysQuery,
   RunTagKeysQueryVariables,
@@ -20,7 +21,7 @@ import {
 } from './types/RunsFilterInput.types';
 import {COMMON_COLLATOR} from '../app/Util';
 import {__ASSET_JOB_PREFIX} from '../asset-graph/Utils';
-import {RunStatus, RunsFilter} from '../graphql/types';
+import {RunStatus, RunsFeedView, RunsFilter} from '../graphql/types';
 import {useQueryPersistedState} from '../hooks/useQueryPersistedState';
 import {TruncatedTextWithFullTextOnHover} from '../nav/getLeftNavItemsForOption';
 import {useFilters} from '../ui/BaseFilters';
@@ -104,7 +105,11 @@ export function useQueryPersistedRunFilters(enabledFilters?: RunFilterTokenType[
   return useQueryPersistedState<RunFilterToken[]>(
     useMemo(
       () => ({
-        encode: (tokens) => ({q: tokensAsStringArray(tokens), cursor: undefined}),
+        encode: (tokens) => ({
+          q: tokensAsStringArray(tokens),
+          cursor: undefined,
+          [RUNS_FEED_CURSOR_KEY]: undefined,
+        }),
         decode: ({q = []}) =>
           tokenizedValuesFromStringArray(q, RUN_PROVIDERS_EMPTY).filter(
             (t) =>
@@ -119,10 +124,10 @@ export function useQueryPersistedRunFilters(enabledFilters?: RunFilterTokenType[
 export function runsPathWithFilters(
   filterTokens: RunFilterToken[],
   basePath: string = '/runs',
-  includeRunsFromBackfills: boolean | undefined = undefined,
+  view?: RunsFeedView,
 ) {
   return `${basePath}?${qs.stringify(
-    {q: tokensAsStringArray(filterTokens), show_runs_within_backfills: includeRunsFromBackfills},
+    {q: tokensAsStringArray(filterTokens), view: view?.toLowerCase()},
     {arrayFormat: 'brackets'},
   )}`;
 }
@@ -434,7 +439,8 @@ export const useRunsFilterInput = ({tokens, onChange, enabledFilters}: RunsFilte
     name: 'Partition',
     icon: 'partition',
     initialSuggestions: partitionValues,
-    getNoSuggestionsPlaceholder: (query) => (query ? 'Invalid ID' : 'Type or paste a backfill ID'),
+    getNoSuggestionsPlaceholder: (query) =>
+      query ? 'Invalid partition' : 'Type or paste a partition',
 
     state: useMemo(() => {
       return tokens
@@ -484,11 +490,11 @@ export const useRunsFilterInput = ({tokens, onChange, enabledFilters}: RunsFilte
     matchType: 'any-of',
   });
 
-  const launchedByFilter = useStaticSetFilter({
+  const launchedByFilter = useSuggestionFilter({
     name: 'Launched by',
-    allowMultipleSelections: false,
     icon: 'add_circle',
-    allValues: createdByValues,
+    initialSuggestions: createdByValues,
+    allowMultipleSelections: false,
     renderLabel: ({value}) => {
       let icon;
       let labelValue = value.value;
@@ -499,8 +505,8 @@ export const useRunsFilterInput = ({tokens, onChange, enabledFilters}: RunsFilte
       } else if (value.type === DagsterTag.User) {
         return <UserDisplay email={value.value!} isFilter />;
       } else if (value.type === DagsterTag.Automaterialize) {
-        icon = <Icon name="auto_materialize_policy" />;
-        labelValue = 'Auto-materialize policy';
+        icon = <Icon name="automation_condition" />;
+        labelValue = 'Automation condition';
       }
       return (
         <Box flex={{direction: 'row', gap: 4, alignItems: 'center'}}>
@@ -511,21 +517,43 @@ export const useRunsFilterInput = ({tokens, onChange, enabledFilters}: RunsFilte
     },
     getStringValue: (x) => {
       if (x.type === DagsterTag.Automaterialize) {
-        return 'Auto-materialize policy';
+        return 'Automation condition';
       }
       return x.value!;
     },
     state: useMemo(() => {
-      return new Set(
-        tokens
-          .filter(
-            ({token, value}) =>
-              token === 'tag' && CREATED_BY_TAGS.includes(value.split('=')[0] as DagsterTag),
-          )
-          .map(({value}) => tagValueToFilterObject(value)),
-      );
+      return tokens
+        .filter(
+          ({token, value}) =>
+            token === 'tag' && CREATED_BY_TAGS.includes(value.split('=')[0] as DagsterTag),
+        )
+        .map(({value}) => tagValueToFilterObject(value));
     }, [tokens]),
-    onStateChanged: (values) => {
+    freeformSearchResult(query, suggestionPath) {
+      if (suggestionPath.length === 0) {
+        return [
+          {
+            value: {
+              key: `${DagsterTag.ScheduleName}-freeform`,
+              type: DagsterTag.ScheduleName,
+              value: query,
+            },
+            final: true,
+          },
+          {
+            value: {
+              key: `${DagsterTag.SensorName}-freeform`,
+              type: DagsterTag.SensorName,
+              value: query,
+            },
+            final: true,
+          },
+        ];
+      }
+      return null;
+    },
+    freeformResultPosition: 'end',
+    setState: (values) => {
       onChange([
         ...tokens.filter((token) => {
           if (token.token !== 'tag') {
@@ -538,6 +566,12 @@ export const useRunsFilterInput = ({tokens, onChange, enabledFilters}: RunsFilte
           value: `${value.type}=${value.value}`,
         })),
       ]);
+    },
+    getKey: ({value}) => value,
+    isMatch: ({value}, query) => value.toLowerCase().includes(query.toLowerCase()),
+    matchType: 'any-of',
+    onSuggestionClicked: async (value) => {
+      return [{value}];
     },
   });
 

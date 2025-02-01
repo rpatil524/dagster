@@ -1,7 +1,8 @@
 from abc import abstractmethod
-from typing import TYPE_CHECKING, AbstractSet, Any, Generic, Optional
+from typing import TYPE_CHECKING, AbstractSet, Any, Generic, Optional, Union  # noqa: UP035
 
 import dagster._check as check
+from dagster._annotations import public
 from dagster._core.asset_graph_view.asset_graph_view import U_EntityKey
 from dagster._core.definitions.asset_key import AssetKey, T_EntityKey
 from dagster._core.definitions.base_asset_graph import BaseAssetGraph, BaseAssetNode
@@ -30,7 +31,9 @@ class EntityMatchesCondition(
     def name(self) -> str:
         return self.key.to_user_string()
 
-    def evaluate(self, context: AutomationContext[T_EntityKey]) -> AutomationResult[T_EntityKey]:
+    async def evaluate(
+        self, context: AutomationContext[T_EntityKey]
+    ) -> AutomationResult[T_EntityKey]:
         # if the key we're mapping to is a child of the key we're mapping from and is not
         # self-dependent, use the downstream mapping function, otherwise use upstream
         if (
@@ -48,12 +51,31 @@ class EntityMatchesCondition(
             child_condition=self.operand, child_index=0, candidate_subset=to_candidate_subset
         )
 
-        to_result = self.operand.evaluate(to_context)
+        to_result = await to_context.evaluate_async()
 
         true_subset = to_result.true_subset.compute_mapped_subset(
             context.key, direction=directions[1]
         )
         return AutomationResult(context=context, true_subset=true_subset, child_results=[to_result])
+
+    @public
+    def replace(
+        self, old: Union[AutomationCondition, str], new: AutomationCondition
+    ) -> AutomationCondition:
+        """Replaces all instances of ``old`` across any sub-conditions with ``new``.
+
+        If ``old`` is a string, then conditions with a label matching
+        that string will be replaced.
+
+        Args:
+            old (Union[AutomationCondition, str]): The condition to replace.
+            new (AutomationCondition): The condition to replace with.
+        """
+        return (
+            new
+            if old in [self, self.get_label()]
+            else copy(self, operand=self.operand.replace(old, new))
+        )
 
 
 @record
@@ -73,9 +95,9 @@ class DepsAutomationCondition(BuiltinAutomationCondition[T_EntityKey]):
         name = self.base_name
         props = []
         if self.allow_selection is not None:
-            props.append("allow_selection={self.allow_selection}")
+            props.append(f"allow_selection={self.allow_selection}")
         if self.ignore_selection is not None:
-            props.append("ignore_selection={self.ignore_selection}")
+            props.append(f"ignore_selection={self.ignore_selection}")
 
         if props:
             name += f"({','.join(props)})"
@@ -85,6 +107,7 @@ class DepsAutomationCondition(BuiltinAutomationCondition[T_EntityKey]):
     def requires_cursor(self) -> bool:
         return False
 
+    @public
     def allow(self, selection: "AssetSelection") -> "DepsAutomationCondition":
         """Returns a copy of this condition that will only consider dependencies within the provided
         AssetSelection.
@@ -97,6 +120,7 @@ class DepsAutomationCondition(BuiltinAutomationCondition[T_EntityKey]):
         )
         return copy(self, allow_selection=allow_selection)
 
+    @public
     def ignore(self, selection: "AssetSelection") -> "DepsAutomationCondition":
         """Returns a copy of this condition that will ignore dependencies within the provided
         AssetSelection.
@@ -119,6 +143,25 @@ class DepsAutomationCondition(BuiltinAutomationCondition[T_EntityKey]):
             dep_keys -= self.ignore_selection.resolve(asset_graph)
         return dep_keys
 
+    @public
+    def replace(
+        self, old: Union[AutomationCondition, str], new: AutomationCondition
+    ) -> AutomationCondition:
+        """Replaces all instances of ``old`` across any sub-conditions with ``new``.
+
+        If ``old`` is a string, then conditions with a label matching
+        that string will be replaced.
+
+        Args:
+            old (Union[AutomationCondition, str]): The condition to replace.
+            new (AutomationCondition): The condition to replace with.
+        """
+        return (
+            new
+            if old in [self, self.get_label()]
+            else copy(self, operand=self.operand.replace(old, new))
+        )
+
 
 @whitelist_for_serdes
 class AnyDepsCondition(DepsAutomationCondition[T_EntityKey]):
@@ -126,19 +169,18 @@ class AnyDepsCondition(DepsAutomationCondition[T_EntityKey]):
     def base_name(self) -> str:
         return "ANY_DEPS_MATCH"
 
-    def evaluate(self, context: AutomationContext[T_EntityKey]) -> AutomationResult[T_EntityKey]:
+    async def evaluate(
+        self, context: AutomationContext[T_EntityKey]
+    ) -> AutomationResult[T_EntityKey]:
         dep_results = []
         true_subset = context.get_empty_subset()
 
         for i, dep_key in enumerate(sorted(self._get_dep_keys(context.key, context.asset_graph))):
-            dep_condition = EntityMatchesCondition(key=dep_key, operand=self.operand)
-            dep_result = dep_condition.evaluate(
-                context.for_child_condition(
-                    child_condition=dep_condition,
-                    child_index=i,
-                    candidate_subset=context.candidate_subset,
-                )
-            )
+            dep_result = await context.for_child_condition(
+                child_condition=EntityMatchesCondition(key=dep_key, operand=self.operand),
+                child_index=i,
+                candidate_subset=context.candidate_subset,
+            ).evaluate_async()
             dep_results.append(dep_result)
             true_subset = true_subset.compute_union(dep_result.true_subset)
 
@@ -152,19 +194,18 @@ class AllDepsCondition(DepsAutomationCondition[T_EntityKey]):
     def base_name(self) -> str:
         return "ALL_DEPS_MATCH"
 
-    def evaluate(self, context: AutomationContext[T_EntityKey]) -> AutomationResult[T_EntityKey]:
+    async def evaluate(
+        self, context: AutomationContext[T_EntityKey]
+    ) -> AutomationResult[T_EntityKey]:
         dep_results = []
         true_subset = context.candidate_subset
 
         for i, dep_key in enumerate(sorted(self._get_dep_keys(context.key, context.asset_graph))):
-            dep_condition = EntityMatchesCondition(key=dep_key, operand=self.operand)
-            dep_result = dep_condition.evaluate(
-                context.for_child_condition(
-                    child_condition=dep_condition,
-                    child_index=i,
-                    candidate_subset=context.candidate_subset,
-                )
-            )
+            dep_result = await context.for_child_condition(
+                child_condition=EntityMatchesCondition(key=dep_key, operand=self.operand),
+                child_index=i,
+                candidate_subset=context.candidate_subset,
+            ).evaluate_async()
             dep_results.append(dep_result)
             true_subset = true_subset.compute_intersection(dep_result.true_subset)
 
