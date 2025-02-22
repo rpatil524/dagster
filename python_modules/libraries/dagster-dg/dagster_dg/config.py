@@ -1,4 +1,3 @@
-import sys
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -9,7 +8,7 @@ import tomlkit
 from click.core import ParameterSource
 
 from dagster_dg.error import DgError, DgValidationError
-from dagster_dg.utils import get_toml_value
+from dagster_dg.utils import get_toml_value, is_macos, is_windows
 
 T = TypeVar("T")
 
@@ -17,9 +16,9 @@ DEFAULT_BUILTIN_COMPONENT_LIB = "dagster_components"
 
 
 def _get_default_cache_dir() -> Path:
-    if sys.platform == "win32":
+    if is_windows():
         return Path.home() / "AppData" / "dg" / "cache"
-    elif sys.platform == "darwin":
+    elif is_macos():
         return Path.home() / "Library" / "Caches" / "dg"
     else:
         return Path.home() / ".cache" / "dg"
@@ -40,6 +39,10 @@ class DgConfig:
         builitin_component_lib (str): The name of the builtin component library to load.
         use_dg_managed_environment (bool): If True, `dg` will build and manage a virtual environment
             using `uv`. Note that disabling the managed enviroment will also disable caching.
+        require_local_venv (bool): If True, commands that access an environment with
+            dagster-components will only use a `.venv` directory discovered in the ancestor tree. If no
+            `.venv` directory is discovered, an error will be raised. Note that this disallows the use
+            of both the system python environment and non-local but activated virtual environments.
     """
 
     disable_cache: bool = False
@@ -47,9 +50,10 @@ class DgConfig:
     verbose: bool = False
     builtin_component_lib: str = DEFAULT_BUILTIN_COMPONENT_LIB
     use_dg_managed_environment: bool = True
+    require_local_venv: bool = True
     is_component_lib: bool = False
-    is_code_location: bool = False
-    is_deployment: bool = False
+    is_project: bool = False
+    is_workspace: bool = False
     root_package: Optional[str] = None
     component_package: Optional[str] = None
     component_lib_package: Optional[str] = None
@@ -95,11 +99,12 @@ class DgPartialConfig(TypedDict, total=False):
     verbose: bool
     builtin_component_lib: str
     use_dg_managed_environment: bool
+    require_local_venv: bool
     component_package: str
     component_lib_package: str
-    is_code_location: bool
+    is_project: bool
     is_component_lib: bool
-    is_deployment: bool
+    is_workspace: bool
 
 
 def _normalize_dg_partial_config(raw_dict: Mapping[str, object]) -> DgPartialConfig:
@@ -119,16 +124,19 @@ def _normalize_dg_partial_config(raw_dict: Mapping[str, object]) -> DgPartialCon
         config["use_dg_managed_environment"], bool
     ):
         raise DgValidationError("`use_dg_managed_environment` must be a boolean.")
+    if "require_local_venv" in config and not isinstance(config["require_local_venv"], bool):
+        raise DgValidationError("`require_local_venv` must be a boolean.")
     if "component_package" in config and not isinstance(config["component_package"], str):
         raise DgValidationError("`component_package` must be a string.")
     if "component_lib_package" in config and not isinstance(config["component_lib_package"], str):
         raise DgValidationError("`component_lib_package` must be a string.")
-    if "is_code_location" in config and not isinstance(config["is_code_location"], bool):
-        raise DgValidationError("`is_code_location` must be a boolean.")
+    if "is_project" in config and not isinstance(config["is_project"], bool):
+        raise DgValidationError("`is_project` must be a boolean.")
     if "is_component_lib" in config and not isinstance(config["is_component_lib"], bool):
         raise DgValidationError("`is_component_lib` must be a boolean.")
-    if "is_deployment" in config and not isinstance(config["is_deployment"], bool):
-        raise DgValidationError("`is_deployment` must be a boolean.")
+
+    if "is_workspace" in config and not isinstance(config["is_workspace"], bool):
+        raise DgValidationError("`is_workspace` must be a boolean.")
 
     if unrecognized_keys := [k for k in config.keys() if k not in DgPartialConfig.__annotations__]:
         raise DgValidationError(f"Unrecognized fields in configuration: {unrecognized_keys}")
