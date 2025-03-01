@@ -1,0 +1,1 @@
+dg docs component-type my_component_library.lib.ShellCommand

@@ -25,6 +25,7 @@ from starlette.concurrency import (
 if TYPE_CHECKING:
     from dagster_graphql.schema.errors import (
         GrapheneAssetNotFoundError,
+        GrapheneUnauthorizedError,
         GrapheneUnsupportedOperationError,
     )
     from dagster_graphql.schema.roots.mutation import GrapheneTerminateRunPolicy
@@ -81,8 +82,10 @@ def terminate_pipeline_execution(
     graphene_info: "ResolveInfo",
     run_id: str,
     terminate_policy: "GrapheneTerminateRunPolicy",
-) -> Union["GrapheneTerminateRunSuccess", "GrapheneTerminateRunFailure"]:
-    from dagster_graphql.schema.errors import GrapheneRunNotFoundError
+) -> Union[
+    "GrapheneTerminateRunSuccess", "GrapheneTerminateRunFailure", "GrapheneUnauthorizedError"
+]:
+    from dagster_graphql.schema.errors import GrapheneRunNotFoundError, GrapheneUnauthorizedError
     from dagster_graphql.schema.pipelines.pipeline import GrapheneRun
     from dagster_graphql.schema.roots.mutation import (
         GrapheneTerminateRunFailure,
@@ -101,7 +104,8 @@ def terminate_pipeline_execution(
     )
 
     if not record:
-        assert_permission(graphene_info, Permissions.TERMINATE_PIPELINE_EXECUTION)
+        if not graphene_info.context.has_permission(Permissions.TERMINATE_PIPELINE_EXECUTION):
+            return GrapheneUnauthorizedError()
         return GrapheneRunNotFoundError(run_id)
 
     run = record.dagster_run
@@ -317,13 +321,15 @@ async def gen_captured_log_data(
     def _enqueue(new_event):
         loop.call_soon_threadsafe(queue.put_nowait, new_event)
 
-    subscription(_enqueue)
+    # subscription object will attempt to fetch when started, so move off main thread
+    await run_in_threadpool(subscription, _enqueue)
+
     is_complete = False
     try:
         while not is_complete:
             update = await queue.get()
             yield from_captured_log_data(update)
-            is_complete = subscription.is_complete
+            is_complete = subscription.is_complete and queue.empty()
     finally:
         subscription.dispose()
 

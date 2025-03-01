@@ -7,14 +7,13 @@ This is the home of the Dagster documentation. The documentation site is built u
 ## Overview of the docs
 
 - `./src` contains custom components, styles, themes, and layouts.
-- `./content-templates` contains the templates for the documentation pages.
-- `./docs/` is the source of truth for the documentation.
-- `/examples/docs_beta_snippets/docs_beta_snippets/` contains code examples for the documentation. Some code examples also live in `/examples/` and `/examples/docs_snippets/docs_snippets/`.
+- `./docs/` contains documentation Markdown files.
+- `/examples/docs_snippets/docs_snippets/` contains code examples for the documentation. Some code examples also live in `/examples/` and `/examples/docs_beta_snippets/docs_beta_snippets/`.
 
 The docs are organized into the following sections:
 
 - Docs - includes content from [getting-started](./docs/getting-started/), [etl-pipeline-tutorial](./docs/etl-pipeline-tutorial/), [guides](./docs/guides/), and [about](./docs/about/)
-- [Tutorials](./docs/tutorials/)
+- [Examples](./docs/examples/)
 - [Integrations](./docs/integrations/)
 - [Dagster+](./docs/dagster-plus/)
 - [API reference](./docs/api/)
@@ -27,23 +26,14 @@ For formatting guidelines, see the [CONTRIBUTING](CONTRIBUTING.md) guide.
 
 ## Installation
 
-The site uses `node` and [yarn](https://yarnpkg.com/) for package management. We recommend using `nvm` to install the long-term-support version of Node.
+The site uses [yarn](https://yarnpkg.com/) for package management. We recommend using `nvm` to install the long-term-support version of Node.
 
+```sh
+brew install nvm yarn vale
 ```
-brew install nvm yarn
+
+```sh
 nvm install --lts
-```
-
-```
-yarn install
-```
-
-The docs site also uses [Vale](https://vale.sh/) to check for issues in the documentation.
-
-Install Vale with:
-
-```bash
-brew install vale
 ```
 
 ---
@@ -53,14 +43,30 @@ brew install vale
 To start the local development server:
 
 ```bash
+yarn install
+```
+
+```bash
 yarn start
 ```
 
-This command starts a local development server and opens up a browser window. Most changes are reflected live without having to restart the server. Access the website at [http://localhost:3050](http://localhost:3050).
+This command starts a local development server and opens [http://localhost:3050](http://localhost:3050) in a browser window.
 
-### Linters
+### Checking for build errors
 
-To check the documentation for different issues, use the following:
+To check for broken links and other build errors, you will need to build API docs, then build the full docs site:
+
+```bash
+# build and copy API markdown files; build and copy the sphinx `objects.inv` to static/
+yarn build-api-docs
+
+# build the static site
+yarn build
+```
+
+### Linting
+
+To check the documentation for formatting issues, use the following:
 
 ```bash
 ## Lints all content, applies lint autofixes and prettier changes
@@ -73,27 +79,31 @@ yarn vale /path/to/file      ## check individual file
 yarn vale --no-wrap          ## remove wrapping from output
 ```
 
+For more information on Vale, see https://vale.sh/. 
+
 ---
 
-## Build
+## Generated content
 
-To build the site for production:
+Kinds tags are generated programmatically and stored in the `docs/partials/_KindsTags.md` partial. This is done using the following command:
 
-```bash
-# build and copy API markdown files
-make mdx
-make mdx_copy
-
-# build and copy the Sphinx objects.inv
-make sphinx_objects_inv
-
-# build the static site
-yarn build
+```sh
+yarn rebuild-kinds-tags
 ```
 
-This command generates static content into the `build` directory and can be served using any static contents hosting service. This also checks for any broken links in the documentation.
+---
 
-**NOTE:** the `make sphinx_objects_inv` command needs to be run before creating a new release. We plan to automate this procedure in the future.
+## Versioning
+
+Previous versions of the docs site are made accessible through preview deployments in Vercel, for example:
+
+* https://release-1-9-13.archive.dagster-docs.io/
+
+Which is hosted on the `archive` subdomain of dagster-docs.io where `release-1-9-13` is the release branch in version control.
+
+These versions are accessible through the navigation bar as external links, and a link to the "Latest docs" is presented on archived deployments. See the conditional logic using `VERCEL_ENV` in docusaurus.config.ts.
+
+To validate the dropdown menu, you can run `VERCEL_ENV=preview yarn start`.
 
 ---
 
@@ -101,15 +111,7 @@ This command generates static content into the `build` directory and can be serv
 
 This site is built and deployed using Vercel.
 
-### API documentation
-
-API documentation is built in Vercel by overriding the _Build Command_ to the following:
-
-```sh
-yarn sync-api-docs && yarn build
-```
-
-This runs the `scripts/vercel-sync-api-docs.sh` script which builds the MDX files using the custom `sphinx-mdx-builder`, and copies the resulting MDX files to `docs/api/python-api`.
+The _build_ step in Vercel is overridden to build API documentation using the `scripts/vercel-sync-api-docs.sh` script; this should _not_ be used locally.
 
 ---
 

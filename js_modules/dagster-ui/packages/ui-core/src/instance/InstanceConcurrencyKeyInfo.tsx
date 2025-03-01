@@ -1,4 +1,5 @@
 import {
+  Alert,
   Box,
   Button,
   Caption,
@@ -26,15 +27,12 @@ import * as React from 'react';
 import {Link, useHistory} from 'react-router-dom';
 
 import {gql, useMutation, useQuery} from '../apollo-client';
+import {POOL_DETAILS_QUERY} from './PoolDetailsQuery';
 import {
   SetConcurrencyLimitMutation,
   SetConcurrencyLimitMutationVariables,
 } from './types/InstanceConcurrency.types';
 import {
-  ConcurrencyKeyDetailsQuery,
-  ConcurrencyKeyDetailsQueryVariables,
-  ConcurrencyLimitFragment,
-  ConcurrencyStepFragment,
   DeleteConcurrencyLimitMutation,
   DeleteConcurrencyLimitMutationVariables,
   FreeConcurrencySlotsMutation,
@@ -42,8 +40,13 @@ import {
   RunsForConcurrencyKeyQuery,
   RunsForConcurrencyKeyQueryVariables,
 } from './types/InstanceConcurrencyKeyInfo.types';
+import {
+  ConcurrencyLimitFragment,
+  ConcurrencyStepFragment,
+  PoolDetailsQuery,
+  PoolDetailsQueryVariables,
+} from './types/PoolDetailsQuery.types';
 import {showSharedToaster} from '../app/DomUtils';
-import {useFeatureFlags} from '../app/Flags';
 import {
   FIFTEEN_SECONDS,
   QueryRefreshCountdown,
@@ -68,23 +71,20 @@ export const InstanceConcurrencyKeyInfo = ({concurrencyKey}: {concurrencyKey: st
   useDocumentTitle(`Pool: ${concurrencyKey}`);
   const [showEdit, setShowEdit] = React.useState<boolean>();
   const [showDelete, setShowDelete] = React.useState<boolean>(false);
-  const queryResult = useQuery<ConcurrencyKeyDetailsQuery, ConcurrencyKeyDetailsQueryVariables>(
-    CONCURRENCY_KEY_DETAILS_QUERY,
-    {
-      variables: {concurrencyKey},
-    },
-  );
+  const queryResult = useQuery<PoolDetailsQuery, PoolDetailsQueryVariables>(POOL_DETAILS_QUERY, {
+    variables: {pool: concurrencyKey},
+  });
   const {data, refetch} = queryResult;
   const concurrencyLimit = data?.instance.concurrencyLimit;
+  const hasRunQueue = data?.instance.runQueuingSupported;
   const refreshState = useQueryRefreshAtInterval(queryResult, FIFTEEN_SECONDS);
-  const {flagPoolUI} = useFeatureFlags();
   const history = useHistory();
   const onDelete = () => {
     history.push('/deployment/concurrency');
     showSharedToaster({
       icon: 'trash',
       intent: 'success',
-      message: flagPoolUI ? 'Deleted pool limit' : 'Deleted concurrency key',
+      message: 'Deleted pool limit',
     });
   };
   const granularity = data?.instance.poolConfig?.poolGranularity;
@@ -101,9 +101,7 @@ export const InstanceConcurrencyKeyInfo = ({concurrencyKey}: {concurrencyKey: st
               <Heading>
                 <Box flex={{direction: 'row', gap: 8, alignItems: 'center'}}>
                   <div>
-                    <Link to="/deployment/concurrency">
-                      {flagPoolUI ? 'Pools' : 'Concurrency keys'}
-                    </Link>
+                    <Link to="/deployment/concurrency">Pools</Link>
                   </div>
                   <div>/</div>
                   <div>{concurrencyKey}</div>
@@ -129,17 +127,39 @@ export const InstanceConcurrencyKeyInfo = ({concurrencyKey}: {concurrencyKey: st
               </Box>
             </Box>
             <Box padding={{vertical: 16, horizontal: 24}}>
-              <Subheading>{flagPoolUI ? 'Pool info' : 'Concurrency info'}</Subheading>
+              <Subheading>Pool info</Subheading>
             </Box>
+            {!hasRunQueue && granularity !== 'op' ? (
+              <Box margin={{horizontal: 20, bottom: 20}}>
+                <Alert
+                  intent="warning"
+                  title="Run granularity for pools not supported"
+                  description={
+                    <>
+                      The pool granularity is set to <Mono>run</Mono>, but run-level concurrency is
+                      not supported with this run coordinator. To enable run granularity for pools,
+                      configure your instance to use the default <Mono>QueuedRunCoordinator</Mono>{' '}
+                      in your <Mono>dagster.yaml</Mono>. See the{' '}
+                      <a
+                        target="_blank"
+                        rel="noreferrer"
+                        href="https://docs.dagster.io/deployment/dagster-instance#queuedruncoordinator"
+                      >
+                        QueuedRunCoordinator documentation
+                      </a>{' '}
+                      for more information.
+                    </>
+                  }
+                />
+              </Box>
+            ) : null}
             <Box padding={{bottom: 24}}>
               <MetadataTableWIP style={{marginLeft: -1}}>
                 <tbody>
-                  {flagPoolUI ? (
-                    <tr>
-                      <td style={{verticalAlign: 'middle'}}>Granularity</td>
-                      <td>{granularity === 'run' ? 'Run' : 'Op'}</td>
-                    </tr>
-                  ) : null}
+                  <tr>
+                    <td style={{verticalAlign: 'middle'}}>Granularity</td>
+                    <td>{granularity === 'run' ? 'Run' : 'Op'}</td>
+                  </tr>
                   <tr>
                     <td style={{verticalAlign: 'middle'}}>Limit</td>
                     <td>
@@ -173,11 +193,18 @@ export const InstanceConcurrencyKeyInfo = ({concurrencyKey}: {concurrencyKey: st
                   padding={{vertical: 16, horizontal: 24}}
                   flex={{direction: 'row', alignItems: 'center', justifyContent: 'space-between'}}
                 >
-                  <Subheading>In progress</Subheading>
+                  <Subheading>In progress steps</Subheading>
                 </Box>
                 <Box style={{marginLeft: -1}}>
                   <PendingStepsTable keyInfo={concurrencyLimit} refresh={refetch} />
                 </Box>
+                <Box
+                  padding={{vertical: 16, horizontal: 24}}
+                  flex={{direction: 'row', alignItems: 'center', justifyContent: 'space-between'}}
+                >
+                  <Subheading>Queued runs</Subheading>
+                </Box>
+                <PoolRunsTable pool={concurrencyKey} runStatuses={queuedStatuses} />
               </>
             ) : (
               <>
@@ -267,7 +294,6 @@ const EditConcurrencyLimitDialog = ({
     SetConcurrencyLimitMutationVariables
   >(SET_CONCURRENCY_LIMIT_MUTATION);
 
-  const {flagPoolUI} = useFeatureFlags();
   const save = async () => {
     setIsSubmitting(true);
     await setConcurrencyLimit({
@@ -289,12 +315,12 @@ const EditConcurrencyLimitDialog = ({
       onClose={onClose}
     >
       <DialogBody>
-        <Box margin={{bottom: 4}}>{flagPoolUI ? 'Pool' : 'Concurrency key'}:</Box>
+        <Box margin={{bottom: 4}}>Pool:</Box>
         <Box margin={{bottom: 16}}>
           <strong>{concurrencyKey}</strong>
         </Box>
         <Box margin={{bottom: 4}}>
-          {flagPoolUI ? 'Pool' : 'Concurrency'} limit ({minValue}-{maxValue}):
+          Pool limit ({minValue}-{maxValue}):
         </Box>
         <Box>
           <TextInput
@@ -493,7 +519,6 @@ const PendingStepsTable = ({
   refresh: () => void;
 }) => {
   const runIds = [...new Set(keyInfo.pendingSteps.map((step) => step.runId))];
-  const {flagPoolUI} = useFeatureFlags();
   const queryResult = useQuery<RunsForConcurrencyKeyQuery, RunsForConcurrencyKeyQueryVariables>(
     RUNS_FOR_CONCURRENCY_KEY_QUERY,
     {
@@ -545,9 +570,7 @@ const PendingStepsTable = ({
     </thead>
   );
 
-  const emptyErrorMessage = flagPoolUI
-    ? 'There are no active or pending steps for this pool.'
-    : 'There are no active or pending steps for this concurrency key.';
+  const emptyErrorMessage = 'There are no active or pending steps for this pool.';
   if (!steps.length) {
     return (
       <NonIdealState icon="no-results" title="No active steps" description={emptyErrorMessage} />
@@ -638,32 +661,6 @@ const PendingStepRow = ({
   );
 };
 
-const CONCURRENCY_STEP_FRAGMENT = gql`
-  fragment ConcurrencyStepFragment on PendingConcurrencyStep {
-    runId
-    stepKey
-    enqueuedTimestamp
-    assignedTimestamp
-    priority
-  }
-`;
-const CONCURRENCY_LIMIT_FRAGMENT = gql`
-  fragment ConcurrencyLimitFragment on ConcurrencyKeyInfo {
-    concurrencyKey
-    limit
-    slotCount
-    claimedSlots {
-      runId
-      stepKey
-    }
-    pendingSteps {
-      ...ConcurrencyStepFragment
-    }
-    usingDefaultLimit
-  }
-  ${CONCURRENCY_STEP_FRAGMENT}
-`;
-
 const SET_CONCURRENCY_LIMIT_MUTATION = gql`
   mutation SetConcurrencyLimit($concurrencyKey: String!, $limit: Int!) {
     setConcurrencyLimit(concurrencyKey: $concurrencyKey, limit: $limit)
@@ -680,25 +677,6 @@ export const FREE_CONCURRENCY_SLOTS_MUTATION = gql`
   mutation FreeConcurrencySlots($runId: String!, $stepKey: String) {
     freeConcurrencySlots(runId: $runId, stepKey: $stepKey)
   }
-`;
-
-export const CONCURRENCY_KEY_DETAILS_QUERY = gql`
-  query ConcurrencyKeyDetailsQuery($concurrencyKey: String!) {
-    instance {
-      id
-      minConcurrencyLimitValue
-      maxConcurrencyLimitValue
-      poolConfig {
-        poolGranularity
-        defaultPoolLimit
-        opGranularityRunBuffer
-      }
-      concurrencyLimit(concurrencyKey: $concurrencyKey) {
-        ...ConcurrencyLimitFragment
-      }
-    }
-  }
-  ${CONCURRENCY_LIMIT_FRAGMENT}
 `;
 
 const RUNS_FOR_CONCURRENCY_KEY_QUERY = gql`

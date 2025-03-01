@@ -17,8 +17,10 @@ import {
   FunctionNameContext,
   IncompleteAttributeExpressionMissingValueContext,
   IncompletePlusTraversalExpressionContext,
+  IncompleteUpTraversalExpressionContext,
   LeftParenTokenContext,
   OrTokenContext,
+  PostDigitsWhitespaceContext,
   PostDownwardTraversalWhitespaceContext,
   PostLogicalOperatorWhitespaceContext,
   PostNeighborTraversalWhitespaceContext,
@@ -30,7 +32,6 @@ import {
 
 const DEFAULT_TEXT_CALLBACK = (value: string) => value;
 
-// set to true for debug output if desired
 const DEBUG = false;
 
 export class SelectionAutoCompleteVisitor extends BaseSelectionVisitor {
@@ -43,7 +44,6 @@ export class SelectionAutoCompleteVisitor extends BaseSelectionVisitor {
 
   public list: Array<Suggestion> = [];
 
-  // Replacement indices from the original code
   public _startReplacementIndex: number;
   public _stopReplacementIndex: number;
 
@@ -78,7 +78,6 @@ export class SelectionAutoCompleteVisitor extends BaseSelectionVisitor {
     this._stopReplacementIndex = cursorIndex;
   }
 
-  // Keep the same accessors and logging as before
   set startReplacementIndex(newValue: number) {
     if (DEBUG) {
       console.log('Autocomplete suggestions being set by stack:', new Error());
@@ -180,7 +179,7 @@ export class SelectionAutoCompleteVisitor extends BaseSelectionVisitor {
     this.stopReplacementIndex = ctx.stop!.stopIndex + 1;
 
     const parentChildren = ctx.parent?.children ?? [];
-    if (parentChildren[0]?.constructor.name === 'AttributeNameContext') {
+    if (parentChildren[0]?.constructor.name === AttributeNameContext.name) {
       const rawValue = getValueNodeValue(ctx.value());
       this.addAttributeValueResults(parentChildren[0].text, rawValue);
     }
@@ -192,12 +191,12 @@ export class SelectionAutoCompleteVisitor extends BaseSelectionVisitor {
       let valueNode: ParserRuleContext | null = null;
 
       const parentChildren = ctx.parent?.children ?? [];
-      if (parentChildren[0]?.constructor.name === 'AttributeNameContext') {
+      if (parentChildren[0]?.constructor.name === AttributeNameContext.name) {
         attributeName = parentChildren[0] as ParserRuleContext;
       }
-      if (parentChildren[1]?.constructor.name === 'AttributeValueContext') {
+      if (parentChildren[1]?.constructor.name === AttributeValueContext.name) {
         valueNode = parentChildren[1] as ParserRuleContext;
-      } else if (parentChildren[2]?.constructor.name === 'AttributeValueContext') {
+      } else if (parentChildren[2]?.constructor.name === AttributeValueContext.name) {
         valueNode = parentChildren[2] as ParserRuleContext;
       }
 
@@ -255,6 +254,12 @@ export class SelectionAutoCompleteVisitor extends BaseSelectionVisitor {
     }
   }
 
+  public visitIncompleteUpTraversalExpression(_ctx: IncompleteUpTraversalExpressionContext) {
+    this.list.push(
+      this.createOperatorSuggestion({text: '+', type: 'up-traversal', displayText: '+'}),
+    );
+  }
+
   public visitIncompletePlusTraversalExpression(ctx: IncompletePlusTraversalExpressionContext) {
     if (
       this.nodeIncludesCursor(ctx.postNeighborTraversalWhitespace()) &&
@@ -304,6 +309,18 @@ export class SelectionAutoCompleteVisitor extends BaseSelectionVisitor {
     if (!this.list.length) {
       this.addAfterExpressionResults(ctx);
     }
+  }
+
+  public visitPostDigitsWhitespace(ctx: PostDigitsWhitespaceContext) {
+    this.startReplacementIndex = ctx.start.startIndex;
+    this.stopReplacementIndex = ctx.stop!.stopIndex;
+    this.list.push(
+      this.createOperatorSuggestion({
+        text: '+',
+        type: 'up-traversal',
+        displayText: '+',
+      }),
+    );
   }
 
   public visitPostLogicalOperatorWhitespace(ctx: PostLogicalOperatorWhitespaceContext) {

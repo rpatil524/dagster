@@ -1,4 +1,4 @@
-type: my_component_does_not_exist@__init__.py
+type: .MyComponentDoesNotExist
 
-params:
+attributes:
   a_string: "test"

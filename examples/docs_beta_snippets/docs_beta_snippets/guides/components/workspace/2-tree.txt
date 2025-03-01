@@ -1,0 +1,19 @@
+cd dagster-workspace && tree
+
+.
+├── libraries
+├── projects
+│   └── project-1
+│       ├── project_1
+│       │   ├── __init__.py
+│       │   ├── definitions.py
+│       │   ├── defs
+│       │   └── lib
+│       │       └── __init__.py
+│       ├── project_1_tests
+│       │   └── __init__.py
+│       ├── pyproject.toml
+│       └── uv.lock
+└── pyproject.toml
+
+...

@@ -1,6 +1,6 @@
-type: my_nested_component@__init__.py
+type: .MyNestedComponent
 
-params:
+attributes:
   nested:
     foo:
       a_string: "test"

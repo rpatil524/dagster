@@ -4,7 +4,9 @@ import {Alert, Box, ErrorBoundary, Spinner, Tag} from '@dagster-io/ui-components
 import {useContext, useEffect, useMemo} from 'react';
 import {Link, Redirect, useLocation, useRouteMatch} from 'react-router-dom';
 import {useSetRecoilState} from 'recoil';
+import {FeatureFlag} from 'shared/app/FeatureFlags.oss';
 import {AssetPageHeader} from 'shared/assets/AssetPageHeader.oss';
+import {getAssetFilterStateQueryString} from 'shared/assets/useAssetDefinitionFilterState.oss';
 
 import {ASSET_NODE_CONFIG_FRAGMENT} from './AssetConfig';
 import {AssetEvents} from './AssetEvents';
@@ -22,6 +24,7 @@ import {UNDERLYING_OPS_ASSET_NODE_FRAGMENT} from './UnderlyingOpsOrGraph';
 import {AssetChecks} from './asset-checks/AssetChecks';
 import {assetDetailsPathForKey} from './assetDetailsPathForKey';
 import {gql, useQuery} from '../apollo-client';
+import {featureEnabled} from '../app/Flags';
 import {AssetNodeOverview, AssetNodeOverviewNonSDA} from './overview/AssetNodeOverview';
 import {AssetKey, AssetViewParams} from './types';
 import {AssetTableDefinitionFragment} from './types/AssetTableFragment.types';
@@ -30,6 +33,7 @@ import {
   AssetViewDefinitionQuery,
   AssetViewDefinitionQueryVariables,
 } from './types/AssetView.types';
+import {useAssetViewParams} from './useAssetViewParams';
 import {useDeleteDynamicPartitionsDialog} from './useDeleteDynamicPartitionsDialog';
 import {healthRefreshHintFromLiveData} from './usePartitionHealthData';
 import {useReportEventsDialog} from './useReportEventsDialog';
@@ -47,7 +51,6 @@ import {
 } from '../asset-graph/Utils';
 import {useAssetGraphData} from '../asset-graph/useAssetGraphData';
 import {StaleReasonsTag} from '../assets/Stale';
-import {useQueryPersistedState} from '../hooks/useQueryPersistedState';
 import {IndeterminateLoadingBar} from '../ui/IndeterminateLoadingBar';
 import {buildRepoAddress} from '../workspace/buildRepoAddress';
 
@@ -59,7 +62,7 @@ interface Props {
 }
 
 export const AssetView = ({assetKey, headerBreadcrumbs, writeAssetVisit, currentPath}: Props) => {
-  const [params, setParams] = useQueryPersistedState<AssetViewParams>({});
+  const [params, setParams] = useAssetViewParams();
   const {useTabBuilder, renderFeatureView} = useContext(AssetFeatureContext);
 
   // Load the asset definition
@@ -276,7 +279,11 @@ export const AssetView = ({assetKey, headerBreadcrumbs, writeAssetVisit, current
 
   if (definitionQueryResult.data?.assetOrError.__typename === 'AssetNotFoundError') {
     // Redirect to the asset catalog
-    return <Redirect to={`/assets/${currentPath.join('/')}?view=folder`} />;
+    return (
+      <Redirect
+        to={`/assets/${currentPath.join('/')}?view=folder${getAssetFilterStateQueryString()}`}
+      />
+    );
   }
 
   return (
@@ -308,7 +315,7 @@ export const AssetView = ({assetKey, headerBreadcrumbs, writeAssetVisit, current
         }
         right={
           <Box style={{margin: '-4px 0'}} flex={{direction: 'row', gap: 8}}>
-            {cachedOrLiveDefinition && cachedOrLiveDefinition.jobNames.length > 0 && upstream ? (
+            {cachedOrLiveDefinition && cachedOrLiveDefinition.jobNames.length > 0 ? (
               <LaunchAssetExecutionButton
                 scope={{all: [cachedOrLiveDefinition]}}
                 showChangedAndMissingOption={false}
@@ -358,11 +365,35 @@ function getQueryForVisibleAssets(
   const token = tokenForAssetKey(assetKey);
 
   if (view === 'definition' || view === 'overview') {
-    return {query: `+"${token}"+`, requestedDepth: 1};
+    return {
+      query: featureEnabled(FeatureFlag.flagSelectionSyntax)
+        ? `1+key:"${token}"+1`
+        : `+"${token}"+`,
+      requestedDepth: 1,
+    };
   }
   if (view === 'lineage') {
     const defaultDepth = 1;
     const requestedDepth = Number(lineageDepth) || defaultDepth;
+
+    if (featureEnabled(FeatureFlag.flagSelectionSyntax)) {
+      if (lineageScope === 'upstream') {
+        return {
+          query: `${requestedDepth}+key:"${token}"`,
+          requestedDepth,
+        };
+      } else if (lineageScope === 'downstream') {
+        return {
+          query: `key:"${token}"+${requestedDepth}`,
+          requestedDepth,
+        };
+      }
+      return {
+        query: `${requestedDepth}+key:"${token}"+${requestedDepth}`,
+        requestedDepth,
+      };
+    }
+
     const depthStr = '+'.repeat(requestedDepth);
 
     // Load the asset lineage (for both lineage tab and definition "Upstream" / "Downstream")

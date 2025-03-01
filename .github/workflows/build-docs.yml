@@ -1,20 +1,33 @@
-name: Deploy Docs Revamp
+name: Deploy Docs
 on:
   push:
     branches:
       - master
       - docs-prod
+      - 'release-*'
     paths:
-      - .github/workflows/build-docs-revamp.yml
       - docs/**
       - examples/docs_beta_snippets/**
-      - docs/sphinx/**
+      - examples/docs_snippets/**
+      - examples/docs_projects/**
+      - examples/getting_started_etl_tutorial/**
+      - examples/airlift-migration-tutorial/**
+      - .github/workflows/build-docs.yml
+      - '!docs/README.md'
+      - '!docs/CONTRIBUTING.md'
+      - '!docs/content-templates/**'
   pull_request:
     paths:
       - docs/**
       - examples/docs_beta_snippets/**
-      - .github/workflows/build-docs-revamp.yml
-      - docs/sphinx/**
+      - examples/docs_snippets/**
+      - examples/docs_projects/**
+      - examples/getting_started_etl_tutorial/**
+      - examples/airlift-migration-tutorial/**
+      - .github/workflows/build-docs.yml
+      - '!docs/README.md'
+      - '!docs/CONTRIBUTING.md'
+      - '!docs/content-templates/**'
     types:
       - opened
       - reopened
@@ -99,6 +112,7 @@ jobs:
           vercel-project-id: ${{ secrets.VERCEL_DOCS_NEXT_PROJECT_ID }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           scope: ${{ secrets.VERCEL_ORG_ID }}
+          alias-domains: ${{ env.BRANCH_PREVIEW_SUBDOMAIN }}.archive.dagster-docs.io
 
       - name: Publish to Vercel Production
         uses: amondnet/vercel-action@v25

@@ -1,9 +1,8 @@
 import hashlib
 import shutil
-import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Final, Literal, Optional, Union
+from typing import Final, Literal, Optional
 
 from typing_extensions import Self, TypeAlias
 
@@ -12,19 +11,19 @@ from dagster_dg.utils import (
     DEFAULT_FILE_EXCLUDE_PATTERNS,
     hash_directory_metadata,
     hash_file_metadata,
+    is_macos,
+    is_windows,
 )
 
 _CACHE_CONTAINER_DIR_NAME: Final = "dg-cache"
 
-CachableDataType: TypeAlias = Union[
-    Literal["component_registry_data"], Literal["all_components_schema"]
-]
+CachableDataType: TypeAlias = Literal["component_registry_data", "all_components_schema"]
 
 
 def get_default_cache_dir() -> Path:
-    if sys.platform == "win32":
+    if is_windows():
         return Path.home() / "AppData" / "dg" / "cache"
-    elif sys.platform == "darwin":
+    elif is_macos():
         return Path.home() / "Library" / "Caches" / "dg"
     else:
         return Path.home() / ".cache" / "dg"
@@ -52,8 +51,8 @@ class DgCache:
     @classmethod
     def from_config(cls, config: DgConfig) -> Self:
         return cls.from_parent_path(
-            parent_path=config.cache_dir,
-            logging_enabled=config.verbose,
+            parent_path=config.cli.cache_dir,
+            logging_enabled=config.cli.verbose,
         )
 
     # This is the preferred constructor to use when creating a cache. It ensures that all data is

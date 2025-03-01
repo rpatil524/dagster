@@ -8,7 +8,7 @@ from typing_extensions import Self, TypeVar
 
 import dagster._check as check
 import dagster._seven as seven
-from dagster._annotations import PublicAttr, experimental, public
+from dagster._annotations import PublicAttr, public
 from dagster._core.definitions.asset_key import AssetKey
 from dagster._core.definitions.metadata.table import (
     TableColumn as TableColumn,
@@ -402,7 +402,6 @@ class MetadataValue(ABC, Generic[T_Packable]):
 
     @public
     @staticmethod
-    @experimental
     def table(
         records: Sequence[TableRecord], schema: Optional[TableSchema] = None
     ) -> "TableMetadataValue":
@@ -501,6 +500,16 @@ class MetadataValue(ABC, Generic[T_Packable]):
             data (str): The serialized code location state for a metadata entry.
         """
         return CodeLocationReconstructionMetadataValue(data)
+
+    @public
+    @staticmethod
+    def pool(pool: str) -> "PoolMetadataValue":
+        """Static constructor for a metadata value wrapping a reference to a concurrency pool.
+
+        Args:
+            pool (str): The identifier for the pool.
+        """
+        return PoolMetadataValue(pool=pool)
 
 
 # ########################
@@ -883,7 +892,6 @@ class DagsterAssetMetadataValue(
 
 
 # This should be deprecated or fixed so that `value` does not return itself.
-@experimental
 @whitelist_for_serdes(storage_name="TableMetadataEntryData")
 class TableMetadataValue(
     NamedTuple(
@@ -1039,3 +1047,18 @@ class CodeLocationReconstructionMetadataValue(
     def value(self) -> str:
         """str: The wrapped code location state data."""
         return self.data
+
+
+@whitelist_for_serdes
+class PoolMetadataValue(
+    NamedTuple("_PoolMetadataValue", [("pool", PublicAttr[str])]),
+    MetadataValue[str],
+):
+    def __new__(cls, pool: str):
+        return super().__new__(cls, check.str_param(pool, "pool"))
+
+    @public
+    @property
+    def value(self) -> str:
+        """str: The wrapped pool string."""
+        return self.pool

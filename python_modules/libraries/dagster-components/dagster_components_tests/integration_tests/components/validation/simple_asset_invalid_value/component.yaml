@@ -1,5 +1,5 @@
-type: simple_asset@dagster_components.test
+type: dagster_components_tests.lib.SimpleAssetComponent
 
-params:
+attributes:
   asset_key: "test"
   value: {}

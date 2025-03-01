@@ -4,7 +4,12 @@ import re
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Callable, Optional, Union
+from typing import TYPE_CHECKING, Callable, Optional, Union
+
+import pexpect
+
+if TYPE_CHECKING:
+    from selenium import webdriver
 
 # https://stackoverflow.com/a/14693789
 ANSI_ESCAPE = re.compile(
@@ -52,13 +57,16 @@ def _run_command(cmd: Union[str, Sequence[str]], expect_error: bool = False) -> 
         cmd = " ".join(cmd)
 
     try:
-        actual_output = (
-            subprocess.check_output(
-                f'{cmd} && echo "PWD=$(pwd);"', shell=True, stderr=subprocess.STDOUT
+        if cmd.startswith("duckdb"):
+            actual_output = _run_duckdb_command(cmd)
+        else:
+            actual_output = (
+                subprocess.check_output(
+                    f'{cmd} && echo "PWD=$(pwd);"', shell=True, stderr=subprocess.STDOUT
+                )
+                .decode("utf-8")
+                .strip()
             )
-            .decode("utf-8")
-            .strip()
-        )
         if expect_error:
             print(f"Ran command {cmd}")  # noqa: T201
             print("Got output:")  # noqa: T201
@@ -81,6 +89,50 @@ def _run_command(cmd: Union[str, Sequence[str]], expect_error: bool = False) -> 
     actual_output = ANSI_ESCAPE.sub("", actual_output)
 
     return actual_output
+
+
+# DuckDB modulates its output based on whether it is running in a terminal or not. In particular, it
+# will only respect `.maxwidth` when running in a terminal, as of version 1.2. This means to
+# standardize the output across environments (CI vs local dev on different machines), we need to
+# mimic a terminal. We do this using `pexpect` to spawn a child process connected to a
+# pseudo-terminal. This approach may also prove useful for other commands that modulate their output
+# based on the terminal.
+def _run_duckdb_command(cmd: str) -> str:
+    pattern = r'(duckdb .*) -c "(.*)"'
+    match = re.match(pattern, cmd)
+    if not match:
+        raise ValueError(f"Could not match pattern `{pattern}` in duckdb command {cmd}")
+
+    duckdb_launch_cmd = match.group(1)
+    sql_cmd = match.group(2)
+    child = pexpect.spawn(duckdb_launch_cmd, encoding="utf-8")
+    child.sendline(".maxwidth 110")
+    child.sendline(sql_cmd)
+    child.sendline(".quit")
+    child.expect(pexpect.EOF)
+    output = child.before
+    assert output is not None
+    output = ANSI_ESCAPE.sub("", output)
+    # \r\r can sometimes happen due to weird interactions between pexpect and DuckDB
+    output = output.replace("\r\r", "\r")
+    return _extract_output_table_from_duckdb_output(output)
+
+
+def _extract_output_table_from_duckdb_output(output: str) -> str:
+    lines = output.splitlines()
+    table_start_char = "┌"
+    table_end_char = "└"
+    start_idx = None
+    end_idx = None
+    for idx, line in enumerate(lines):
+        if line.strip().startswith(table_start_char):
+            start_idx = idx
+        if line.strip().startswith(table_end_char):
+            end_idx = idx
+            break
+    assert start_idx is not None, "Could not find start of table"
+    assert end_idx is not None, "Could not find end of table"
+    return "\n".join(lines[start_idx : end_idx + 1])
 
 
 def _assert_matches_or_update_snippet(
@@ -240,6 +292,7 @@ def run_command_and_snippet_output(
     custom_comparison_fn: Optional[Callable[[str, str], bool]] = None,
     ignore_output: bool = False,
     expect_error: bool = False,
+    print_cmd: Optional[str] = None,
 ):
     """Run the given command and check that the output matches the contents of the snippet
     at `snippet_path`. If `update_snippets` is `True`, updates the snippet file with the
@@ -250,8 +303,10 @@ def run_command_and_snippet_output(
         snippet_path (Optional[Path]): The path to the snippet file to check/update.
         update_snippets (Optional[bool]): Whether to update the snippet file with the output.
         snippet_replace_regex (Optional[Sequence[tuple[str, str]]]): A list of regex
-            substitution pairs to apply to the output before checking it against the snippet.
-            Useful to remove dynamic content, e.g. the temporary directory path or timestamps.
+            substitution pairs to apply to the generated snippet file before checking it against the
+            existing version. Note these will apply to both the command and the output of the
+            command. Useful to remove dynamic content, e.g. the temporary directory path or
+            timestamps.
         custom_comparison_fn (Optional[Callable]): A function that takes the output of the
             command and the snippet contents and returns whether they match. Useful for some
             commands (e.g. tree) where the output is frustratingly platform-dependent.
@@ -265,10 +320,12 @@ def run_command_and_snippet_output(
     if snippet_path:
         assert update_snippets is not None
 
+        print_cmd = print_cmd if print_cmd else str(cmd)
+
         if ignore_output:
-            contents = str(cmd)
+            contents = print_cmd
         else:
-            contents = f"{cmd}\n\n{output}"
+            contents = f"{print_cmd}\n\n{output}"
 
         _assert_matches_or_update_snippet(
             contents=contents,
@@ -277,3 +334,19 @@ def run_command_and_snippet_output(
             snippet_replace_regex=snippet_replace_regex,
             custom_comparison_fn=custom_comparison_fn,
         )
+
+
+def screenshot_page(
+    get_webdriver: "Callable[[], webdriver.Chrome]",
+    url: str,
+    path: Path,
+    update_screenshots: bool,
+    width: Optional[int] = 1024,
+    height: Optional[int] = 768,
+) -> None:
+    if not update_screenshots:
+        return
+    webdriver = get_webdriver()
+    webdriver.set_window_size(width, height)
+    webdriver.get(url)
+    webdriver.save_screenshot(path)

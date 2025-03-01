@@ -1,4 +1,4 @@
-type: my_component@__init__.py
+type: .MyComponent
 
-params:
+attributes:
   a_string: "test"

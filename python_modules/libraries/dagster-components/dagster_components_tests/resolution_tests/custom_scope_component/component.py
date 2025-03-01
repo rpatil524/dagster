@@ -1,12 +1,13 @@
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 from dagster import AssetSpec, AutomationCondition, Definitions
 from dagster_components import (
-    AssetAttributesModel,
+    AssetAttributesSchema,
     Component,
     ComponentLoadContext,
-    registered_component_type,
+    ResolvableSchema,
 )
 
 
@@ -18,8 +19,14 @@ def my_custom_automation_condition(cron_schedule: str) -> AutomationCondition:
     return AutomationCondition.cron_tick_passed(cron_schedule) & ~AutomationCondition.in_progress()
 
 
-@registered_component_type(name="custom_scope_component")
+class CustomScopeSchema(ResolvableSchema):
+    asset_attributes: AssetAttributesSchema
+
+
+@dataclass
 class HasCustomScope(Component):
+    asset_attributes: Mapping[str, Any]
+
     @classmethod
     def get_additional_scope(cls) -> Mapping[str, Any]:
         return {
@@ -29,16 +36,9 @@ class HasCustomScope(Component):
             "custom_automation_condition": my_custom_automation_condition,
         }
 
-    def __init__(self, attributes: Mapping[str, Any]):
-        self.attributes = attributes
-
     @classmethod
     def get_schema(cls):
-        return AssetAttributesModel
-
-    @classmethod
-    def load(cls, params: AssetAttributesModel, context: ComponentLoadContext):
-        return cls(attributes=context.resolve_value(params))
+        return CustomScopeSchema
 
     def build_defs(self, context: ComponentLoadContext):
-        return Definitions(assets=[AssetSpec(key="key", **self.attributes)])
+        return Definitions(assets=[AssetSpec(key="key", **self.asset_attributes)])
