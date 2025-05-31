@@ -59,7 +59,12 @@ class Resolvable:
         return cls(**resolve_fields(model, cls, context))
 
     @classmethod
-    def resolve_from_yaml(cls, yaml: str):
+    def resolve_from_yaml(
+        cls,
+        yaml: str,
+        *,
+        scope: Optional[Mapping[str, Any]] = None,
+    ):
         parsed_and_src_tree = try_parse_yaml_with_source_position(yaml)
         model_cls = cls.model()
         if parsed_and_src_tree:
@@ -70,10 +75,14 @@ class Resolvable:
             )
         else:  # yaml parsed as None
             model = model_cls()
-        # support adding scopes
+
         context = ResolutionContext.default(
             parsed_and_src_tree.source_position_tree if parsed_and_src_tree else None
         )
+
+        if scope:
+            context = context.with_scope(**scope)
+
         return cls.resolve_from_model(context, model)
 
     @classmethod
@@ -139,7 +148,8 @@ def derive_model_type(
                     )
                 )
 
-            if field_resolver.can_inject:  # derive and serve via model_field_type
+            # make all fields injectable
+            if field_type != str:
                 field_type = Union[field_type, str]
 
             model_fields[field_name] = (
@@ -387,6 +397,7 @@ def _dig_for_resolver(annotation, path: Sequence[_TypeContainer]) -> Optional[Re
                     )
                 ),
                 model_field_type=_wrap(resolver.model_field_type or args[0], path),
+                inject_before_resolve=resolver.inject_before_resolve,
             )
         annotated_type = args[0]
         if _is_implicitly_resolved_type(annotated_type):
@@ -400,6 +411,13 @@ def _dig_for_resolver(annotation, path: Sequence[_TypeContainer]) -> Optional[Re
             res = _dig_for_resolver(left_t, [*path, _TypeContainer.OPTIONAL])
             if res:
                 return res
+
+    if origin in (Union, UnionType):
+        resolvers = [_dig_for_resolver(arg, path) for arg in args]
+        if all(r is not None for r in resolvers):
+            return Resolver.union(
+                *check.is_list(resolvers, of_type=Resolver),
+            )
 
     elif origin in (
         Sequence,

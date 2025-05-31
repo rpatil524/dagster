@@ -1,14 +1,15 @@
 from dataclasses import dataclass, field
 from typing import Annotated, Literal, Optional, Union
 
+import dagster as dg
 import pytest
+from dagster import Component, Model, Resolvable, ResolvedAssetSpec
 from dagster._core.definitions.asset_key import AssetKey
 from dagster._core.definitions.definitions_class import Definitions
-from dagster.components import Component, Model, Resolvable, ResolvedAssetSpec
 from dagster.components.resolved.core_models import AssetPostProcessor, AssetSpecKwargs
 from dagster.components.resolved.errors import ResolutionException
 from dagster.components.resolved.model import Resolver
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 
 def test_basic():
@@ -339,3 +340,97 @@ foo: foo
 bar: bar
 """)
     assert w.foo == "cool"
+
+
+def test_scope():
+    class DailyPartitionDefinitionModel(Resolvable, Model):
+        type: Literal["daily"] = "daily"
+        start_date: str
+        end_offset: int = 0
+
+    class Example(Resolvable, Model):
+        part: Annotated[
+            dg.DailyPartitionsDefinition,
+            Resolver.default(
+                model_field_type=DailyPartitionDefinitionModel,
+            ),
+        ]
+
+        def build_defs(self, context) -> dg.Definitions:
+            return dg.Definitions()
+
+    daily = dg.DailyPartitionsDefinition(start_date="2025-01-01")
+    ex = Example.resolve_from_yaml(
+        """
+part: "{{ daily }}"
+""",
+        scope={"daily": daily},
+    )
+
+    assert ex.part == daily
+
+
+def test_inject():
+    class Target(Resolvable, Model):
+        spec: ResolvedAssetSpec
+        specs: list[ResolvedAssetSpec]
+        maybe_specs: Optional[list[ResolvedAssetSpec]] = None
+
+    boop = dg.AssetSpec("boop")
+    scope = {"boop": boop, "blank": None}
+
+    t = Target.resolve_from_yaml(
+        """
+spec: "{{ boop }}"
+specs: "{{ [boop] }}"
+maybe_specs: "{{ [boop] }}"
+    """,
+        scope=scope,
+    )
+    assert t
+    assert t.spec == boop
+    assert t.specs == [boop]
+    assert t.maybe_specs == [boop]
+
+    t = Target.resolve_from_yaml(
+        """
+spec: "{{ boop }}"
+specs: "{{ [boop] }}"
+maybe_specs: "{{ blank }}"
+    """,
+        scope=scope,
+    )
+    assert t
+    assert t.spec == boop
+    assert t.specs == [boop]
+    assert t.maybe_specs is None
+
+    t = Target.resolve_from_yaml(
+        """
+spec: "{{ boop }}"
+specs: "{{ [boop] }}"
+    """,
+        scope=scope,
+    )
+    assert t
+    assert t.spec == boop
+    assert t.specs == [boop]
+    assert t.maybe_specs is None
+
+
+def test_inner_inject():
+    class Target(Resolvable, Model):
+        specs: list[ResolvedAssetSpec]
+
+    boop = dg.AssetSpec("boop")
+    scope = {"boop": boop, "blank": None}
+
+    with pytest.raises(ValidationError):
+        Target.resolve_from_yaml(
+            """
+specs:
+  - "{{ boop }}"
+  - key: barf
+    """,
+            scope=scope,
+        )
