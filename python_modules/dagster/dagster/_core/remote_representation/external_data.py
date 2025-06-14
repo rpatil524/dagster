@@ -4,7 +4,6 @@ business logic or clever indexing. Use the classes in external.py
 for that.
 """
 
-import inspect
 import json
 import os
 from abc import ABC, abstractmethod
@@ -28,7 +27,11 @@ from dagster._config.pythonic_config import (
     ConfigurableIOManagerFactoryResourceDefinition,
     ConfigurableResourceFactoryResourceDefinition,
 )
-from dagster._config.pythonic_config.resource import coerce_to_resource, is_coercible_to_resource
+from dagster._config.pythonic_config.resource import (
+    coerce_to_resource,
+    get_resource_type_name,
+    is_coercible_to_resource,
+)
 from dagster._config.snap import ConfigFieldSnap, ConfigSchemaSnapshot, snap_from_config_type
 from dagster._core.definitions import (
     AssetSelection,
@@ -100,6 +103,13 @@ from dagster._serdes import whitelist_for_serdes
 from dagster._time import datetime_from_timestamp
 from dagster._utils.error import SerializableErrorInfo
 from dagster._utils.warnings import suppress_dagster_warnings
+from dagster.components.core.defs_module import (
+    CompositeComponent,
+    CompositeYamlComponent,
+    DagsterDefsComponent,
+    DefsFolderComponent,
+)
+from dagster.components.core.tree import ComponentTree
 
 DEFAULT_MODE_NAME = "default"
 DEFAULT_PRESET_NAME = "default"
@@ -121,7 +131,10 @@ SYSTEM_METADATA_KEY_ASSET_EXECUTION_TYPE = "dagster/asset_execution_type"
         "job_datas": "external_pipeline_datas",
         "job_refs": "external_job_refs",
     },
-    skip_when_empty_fields={"pools"},
+    skip_when_empty_fields={
+        "pools",
+        "component_tree",
+    },
 )
 @record_custom
 class RepositorySnap(IHaveNew):
@@ -136,6 +149,7 @@ class RepositorySnap(IHaveNew):
     asset_check_nodes: Optional[Sequence["AssetCheckNodeSnap"]]
     metadata: Optional[MetadataMapping]
     utilized_env_vars: Optional[Mapping[str, Sequence["EnvVarConsumer"]]]
+    component_tree: Optional["ComponentTreeSnap"]
 
     def __new__(
         cls,
@@ -150,6 +164,7 @@ class RepositorySnap(IHaveNew):
         asset_check_nodes: Optional[Sequence["AssetCheckNodeSnap"]] = None,
         metadata: Optional[MetadataMapping] = None,
         utilized_env_vars: Optional[Mapping[str, Sequence["EnvVarConsumer"]]] = None,
+        component_tree: Optional["ComponentTreeSnap"] = None,
     ):
         return super().__new__(
             cls,
@@ -164,6 +179,7 @@ class RepositorySnap(IHaveNew):
             asset_check_nodes=asset_check_nodes,
             metadata=metadata or {},
             utilized_env_vars=utilized_env_vars,
+            component_tree=component_tree,
         )
 
     @classmethod
@@ -226,6 +242,11 @@ class RepositorySnap(IHaveNew):
 
         resource_job_usage_map: ResourceJobUsageMap = _get_resource_job_usage(jobs)
 
+        component_snap = None
+        component_tree = repository_def.get_component_tree()
+        if component_tree:
+            component_snap = ComponentTreeSnap.from_tree(component_tree)
+
         return cls(
             name=repository_def.name,
             schedules=sorted(
@@ -281,6 +302,7 @@ class RepositorySnap(IHaveNew):
                 ]
                 for env_var, res_names in repository_def.get_env_vars_by_top_level_resource().items()
             },
+            component_tree=component_snap,
         )
 
     def has_job_data(self):
@@ -1255,28 +1277,7 @@ class ResourceSnap(IHaveNew):
         }
 
         resource_type_def = resource_def
-
-        # use the resource function name as the resource type if it's a function resource
-        # (ie direct instantiation of ResourceDefinition or IOManagerDefinition)
-        if type(resource_type_def) in (ResourceDefinition, IOManagerDefinition):
-            original_resource_fn = (
-                resource_type_def._hardcoded_resource_type  # noqa: SLF001
-                if resource_type_def._hardcoded_resource_type  # noqa: SLF001
-                else resource_type_def.resource_fn
-            )
-            module_name = check.not_none(inspect.getmodule(original_resource_fn)).__name__
-            resource_type = f"{module_name}.{original_resource_fn.__name__}"
-        # if it's a Pythonic resource, get the underlying Pythonic class name
-        elif isinstance(
-            resource_type_def,
-            (
-                ConfigurableResourceFactoryResourceDefinition,
-                ConfigurableIOManagerFactoryResourceDefinition,
-            ),
-        ):
-            resource_type = _get_class_name(resource_type_def.configurable_resource_cls)
-        else:
-            resource_type = _get_class_name(type(resource_type_def))
+        resource_type = get_resource_type_name(resource_type_def)
 
         dagster_maintained = (
             resource_type_def._is_dagster_maintained()  # noqa: SLF001
@@ -1922,3 +1923,41 @@ def extract_serialized_job_snap_from_serialized_job_data_snap(serialized_job_dat
             pass
 
     return _extract_safe(serialized_job_data_snap)
+
+
+@whitelist_for_serdes
+@record
+class ComponentInstanceSnap:
+    key: str
+    full_type_name: str
+
+
+@whitelist_for_serdes
+@record
+class ComponentTreeSnap:
+    # expect a compact repr for containers & defs components to be added for tree UI
+    leaf_instances: Sequence[ComponentInstanceSnap]
+
+    @staticmethod
+    def from_tree(tree: ComponentTree) -> "ComponentTreeSnap":
+        leaves = []
+
+        for comp_path, comp_inst in tree.root.iterate_path_component_pairs():
+            if not isinstance(
+                comp_inst,
+                (
+                    DefsFolderComponent,
+                    CompositeYamlComponent,
+                    CompositeComponent,
+                    DagsterDefsComponent,
+                ),
+            ):
+                cls = comp_inst.__class__
+                leaves.append(
+                    ComponentInstanceSnap(
+                        key=comp_path.get_relative_key(tree.root.path),
+                        full_type_name=f"{cls.__module__}.{cls.__qualname__}",
+                    )
+                )
+
+        return ComponentTreeSnap(leaf_instances=leaves)
