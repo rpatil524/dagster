@@ -2,13 +2,13 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, Optional, Union
 
+from dagster import Component, ComponentLoadContext, Resolvable
 from dagster._core.definitions.asset_key import AssetKey
 from dagster._core.definitions.asset_spec import (
     SYSTEM_METADATA_KEY_AUTO_CREATED_STUB_ASSET,
     AssetSpec,
 )
 from dagster._core.definitions.definitions_class import Definitions
-from dagster.components import Component, ComponentLoadContext, Resolvable
 from dagster.components.component_scaffolding import scaffold_component
 from dagster.components.core.defs_module import DefsFolderComponent, find_components_from_context
 from dagster.components.resolved.base import resolve_fields
@@ -221,7 +221,6 @@ def defs_from_subdirs(context: ComponentLoadContext) -> Definitions:
     return DefsFolderComponent(
         path=context.path,
         children=find_components_from_context(context),
-        asset_post_processors=None,
     ).build_defs(context)
 
 
@@ -240,7 +239,7 @@ def handle_iterator(
 
 
 def apply_mappings(defs: Definitions, mappings: Sequence[AirflowDagMapping]) -> Definitions:
-    specs = {spec.key: spec for spec in defs.get_all_asset_specs()}
+    specs = {spec.key: spec for spec in defs.resolve_all_asset_specs()}
     key_to_handle_mapping = {}
     additional_assets = []
 
@@ -266,7 +265,7 @@ def apply_mappings(defs: Definitions, mappings: Sequence[AirflowDagMapping]) -> 
         return spec
 
     return Definitions.merge(
-        defs.map_asset_specs(func=spec_mapper), Definitions(assets=additional_assets)
+        defs.map_resolved_asset_specs(func=spec_mapper), Definitions(assets=additional_assets)
     )
 
 
