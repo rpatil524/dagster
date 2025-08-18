@@ -920,13 +920,16 @@ class AssetDaemon(DagsterDaemon):
                     )
                 )
 
-            with AutoMaterializeLaunchContext(
-                tick,
-                sensor,
-                instance,
-                self._logger,
-                tick_retention_settings,
-            ) as tick_context:
+            with (
+                AutoMaterializeLaunchContext(
+                    tick,
+                    sensor,
+                    instance,
+                    self._logger,
+                    tick_retention_settings,
+                ) as tick_context,
+                workspace,
+            ):
                 await self._evaluate_auto_materialize_tick(
                     tick_context,
                     tick,
@@ -1181,6 +1184,7 @@ class AssetDaemon(DagsterDaemon):
                         },
                         title=f"Run for Declarative Automation evaluation ID {evaluation_id}",
                         description=None,
+                        run_config=run_request.run_config,
                     )
                 )
             return reserved_run_id, check.not_none(asset_graph_subset.asset_keys)
