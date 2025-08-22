@@ -14,7 +14,7 @@ from dagster_shared.record import record
 
 from dagster_dg_cli.cli.scaffold.branch.claude.diagnostics import ClaudeDiagnostics
 from dagster_dg_cli.cli.scaffold.branch.claude.sdk_client import OutputChannel
-from dagster_dg_cli.cli.scaffold.branch.constants import ALLOWED_COMMANDS_PLANNING
+from dagster_dg_cli.cli.scaffold.branch.constants import ALLOWED_COMMANDS_PLANNING, ModelType
 from dagster_dg_cli.cli.scaffold.branch.version_utils import ensure_claude_sdk_python_version
 
 if TYPE_CHECKING:
@@ -36,17 +36,8 @@ class GeneratedPlan:
 
 @record
 class PlanningContext:
-    """Context information for plan generation.
-
-    Attributes:
-        user_input: Original user request
-        dg_context: Dagster project context
-        codebase_patterns: Detected patterns from codebase analysis
-        existing_components: List of available components
-        project_structure: Overview of project file structure
-    """
-
-    user_input: str
+    model: ModelType
+    prompt_text: str
     dg_context: DgContext
     project_structure: dict[str, Any]
     verbose: bool
@@ -85,7 +76,7 @@ class PlanGenerator:
             category="planning_generation_start",
             message="Starting initial plan generation",
             data={
-                "user_input_length": len(context.user_input),
+                "user_input_length": len(context.prompt_text),
             },
         )
 
@@ -97,6 +88,7 @@ class PlanGenerator:
         messages = asyncio.run(
             self.claude_client.scaffold_with_streaming(
                 prompt=prompt,
+                model=context.model,
                 allowed_tools=allowed_tools,
                 output_channel=output_channel,
                 disallowed_tools=["Bash(python:*)", "WebSearch", "WebFetch"],
@@ -112,7 +104,7 @@ class PlanGenerator:
             metadata={
                 "generation_method": "prompt_driven_claude_generation",
                 "messages_count": len(messages),
-                "user_input": context.user_input,
+                "user_input": context.prompt_text,
             },
         )
 
@@ -159,6 +151,7 @@ class PlanGenerator:
         messages = asyncio.run(
             self.claude_client.scaffold_with_streaming(
                 prompt=prompt,
+                model=context.model,
                 allowed_tools=allowed_tools,
                 output_channel=output_channel,
                 disallowed_tools=["Bash(python:*)", "WebSearch", "WebFetch"],
@@ -210,7 +203,7 @@ class PlanGenerator:
 
         # Format template with actual values
         return template.format(
-            user_input=context.user_input,
+            user_input=context.prompt_text,
             context_info=context_info,
         )
 
