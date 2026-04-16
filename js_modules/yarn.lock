@@ -1931,7 +1931,6 @@ __metadata:
     "@typescript-eslint/rule-tester": "npm:^8.44.0"
     eslint: "npm:^9.0.0"
     eslint-config-prettier: "npm:^9.1.0"
-    eslint-plugin-dagster-rules: "link:./rules"
     eslint-plugin-import: "npm:^2.31.0"
     eslint-plugin-jest: "npm:^29.12.2"
     eslint-plugin-jsx-a11y: "npm:^6.10.0"
@@ -10024,12 +10023,6 @@ __metadata:
   checksum: 10/bd25d6610ec3abaa50e8f1beb0119541562bbb8dd02c035c7e887976fe1e0c5dd8175f4607ca8d86d1146df24d52a071bd3d1dd329f6902bd58df805a8ca16d3
   languageName: node
   linkType: hard
-
-"eslint-plugin-dagster-rules@link:./rules::locator=%40dagster-io%2Feslint-config%40workspace%3Aeslint-config":
-  version: 0.0.0-use.local
-  resolution: "eslint-plugin-dagster-rules@link:./rules::locator=%40dagster-io%2Feslint-config%40workspace%3Aeslint-config"
-  languageName: node
-  linkType: soft
 
 "eslint-plugin-import@npm:^2.31.0":
   version: 2.32.0
